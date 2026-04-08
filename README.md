@@ -1,3 +1,11 @@
+---
+title: Software Lifecycle Env
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
 # SoftwareLifecycleEnv
 
 > A deterministic benchmark environment simulating real-world software engineering tasks for the **Meta OpenEnv Hackathon Round 1**.
