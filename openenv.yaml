@@ -18,7 +18,7 @@ tasks:
   - task_hard_maintenance
 
 server:
-  entrypoint: app:app
+  entrypoint: server.app:app
   port: 7860
 
 inference:
