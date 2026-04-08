@@ -1,0 +1,29 @@
+name: SoftwareLifecycleEnv
+description: >
+  A deterministic benchmark environment simulating real-world software
+  engineering tasks — testing, debugging, and maintenance/refactoring.
+version: "1.0.0"
+author: hackathon-team
+license: MIT
+
+environment:
+  class: env.environment.SoftwareLifecycleEnv
+  observation_model: env.models.Observation
+  action_model: env.models.Action
+  reward_model: env.models.RewardInfo
+
+tasks:
+  - task_easy_testing
+  - task_medium_debugging
+  - task_hard_maintenance
+
+server:
+  entrypoint: app:app
+  port: 7860
+
+inference:
+  script: inference.py
+  env_vars:
+    - API_BASE_URL
+    - MODEL_NAME
+    - HF_TOKEN
