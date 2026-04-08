@@ -119,10 +119,16 @@ pip install -r requirements.txt
 ### Start the Server
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 7860
+uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
 The API will be available at `http://localhost:7860`.
+
+You can also launch the packaged console script:
+
+```bash
+uv run server --host 0.0.0.0 --port 7860
+```
 
 ---
 

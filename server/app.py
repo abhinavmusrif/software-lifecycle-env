@@ -10,6 +10,7 @@ GET  /state  → current environment state snapshot
 
 from __future__ import annotations
 
+import argparse
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
@@ -90,3 +91,19 @@ def step(req: StepRequest) -> dict:
 def state() -> dict:
     """Return current environment state."""
     return env.state()
+
+
+def main() -> None:
+    """Run the API server as a console script."""
+    parser = argparse.ArgumentParser(description="Run the SoftwareLifecycleEnv API.")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=7860)
+    args = parser.parse_args()
+
+    import uvicorn
+
+    uvicorn.run("server.app:app", host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()

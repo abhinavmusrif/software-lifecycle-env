@@ -1,0 +1,12 @@
+[project]
+name = "openenv"
+version = "0.2.0"
+description = "Compatibility shim that depends on the official openenv-core package."
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core>=0.2.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

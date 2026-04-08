@@ -3,7 +3,7 @@ name = "software-lifecycle-env"
 version = "1.0.0"
 description = "OpenEnv benchmark environment simulating software lifecycle tasks"
 authors = [{name = "Abhinav Musrif"}]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 dependencies = [
 "fastapi",
@@ -15,8 +15,14 @@ dependencies = [
 ]
 
 [project.scripts]
-server = "server.app:app"
+server = "server.app:main"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["env*", "server*"]
+
+[tool.uv.sources]
+openenv = { path = ".openenv-shim" }
