@@ -1,0 +1,18 @@
+[project]
+name = "software-lifecycle-env"
+version = "1.0.0"
+description = "OpenEnv benchmark environment simulating software lifecycle tasks"
+authors = [{name = "Abhinav Musrif"}]
+requires-python = ">=3.9"
+
+dependencies = [
+"fastapi",
+"uvicorn",
+"pydantic",
+"openai",
+"pyyaml"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
