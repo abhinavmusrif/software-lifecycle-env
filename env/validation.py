@@ -17,9 +17,6 @@ import types
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Tuple
 
-from env.graders import normalize_score
-
-
 class ValidationError(Exception):
     """Raised when task code cannot be validated safely."""
 
@@ -106,7 +103,7 @@ class ValidationCheck:
     visibility: str
     passed: bool
     detail: str
-    weight: float = 1.0 - 1e-6
+    weight: float = 1.0
 
 
 @dataclass
@@ -114,11 +111,11 @@ class ValidationReport:
     """Structured task validation summary."""
 
     task_id: str
-    behavioral_score: float
-    regression_score: float
-    structure_score: float
-    anti_gaming_score: float
-    overall_score: float
+    behavioral_ratio: float
+    regression_ratio: float
+    structure_ratio: float
+    anti_gaming_ratio: float
+    overall_ratio: float
     behavioral_complete: bool
     regression_complete: bool
     structure_complete: bool
@@ -127,14 +124,6 @@ class ValidationReport:
     summary: str
     failure_messages: List[str] = field(default_factory=list)
     checks: List[ValidationCheck] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Normalize numeric score fields while preserving raw completion flags."""
-        self.behavioral_score = normalize_score(self.behavioral_score)
-        self.regression_score = normalize_score(self.regression_score)
-        self.structure_score = normalize_score(self.structure_score)
-        self.anti_gaming_score = normalize_score(self.anti_gaming_score)
-        self.overall_score = normalize_score(self.overall_score)
 
     @property
     def passed_checks(self) -> int:
@@ -176,11 +165,11 @@ class ValidationReport:
         """Return a full JSON-serializable internal view of the report."""
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(self.behavioral_score, 6),
-            "regression_score": round(self.regression_score, 6),
-            "structure_score": round(self.structure_score, 6),
-            "anti_gaming_score": round(self.anti_gaming_score, 6),
-            "overall_score": round(self.overall_score, 6),
+            "behavioral_ratio": round(self.behavioral_ratio, 6),
+            "regression_ratio": round(self.regression_ratio, 6),
+            "structure_ratio": round(self.structure_ratio, 6),
+            "anti_gaming_ratio": round(self.anti_gaming_ratio, 6),
+            "overall_ratio": round(self.overall_ratio, 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": list(self.failure_messages),
@@ -200,11 +189,6 @@ class ValidationReport:
 
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(self.behavioral_score, 6),
-            "regression_score": round(self.regression_score, 6),
-            "structure_score": round(self.structure_score, 6),
-            "anti_gaming_score": round(self.anti_gaming_score, 6),
-            "overall_score": round(self.overall_score, 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": public_failures,
@@ -625,11 +609,11 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
     summary, failures = _build_summary(task_id, checks)
     return ValidationReport(
         task_id=task_id,
-        behavioral_score=behavioral,
-        regression_score=regression,
-        structure_score=structure,
-        anti_gaming_score=anti_gaming,
-        overall_score=overall,
+        behavioral_ratio=behavioral,
+        regression_ratio=regression,
+        structure_ratio=structure,
+        anti_gaming_ratio=anti_gaming,
+        overall_ratio=overall,
         behavioral_complete=behavioral_complete,
         regression_complete=regression_complete,
         structure_complete=structure_complete,

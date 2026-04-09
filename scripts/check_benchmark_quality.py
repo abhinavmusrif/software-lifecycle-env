@@ -25,13 +25,6 @@ from env.tasks import TASKS, get_task
 from env.validation import validate_task
 
 PREVIOUS_MEDIUM_CHEAT_SCORE = 0.55
-SCORE_FIELDS = (
-    "behavioral_score",
-    "regression_score",
-    "structure_score",
-    "anti_gaming_score",
-    "overall_score",
-)
 
 
 def inspect(path: str) -> Action:
@@ -251,11 +244,10 @@ def ensure_hidden_checks_stay_hidden(public_validation: dict) -> None:
         raise AssertionError("Public validation surface leaked a hidden check.")
 
 
-def ensure_score_fields_open_interval(payload: dict, label: str) -> None:
-    ensure_open_interval(
-        [float(payload[field]) for field in SCORE_FIELDS if field in payload],
-        label,
-    )
+def ensure_no_validation_score_keys(payload: dict, label: str) -> None:
+    score_keys = [key for key in payload if key.endswith("_score")]
+    if score_keys:
+        raise AssertionError(f"{label} still exposes score-like keys: {score_keys}")
 
 
 def main() -> None:
@@ -269,15 +261,11 @@ def main() -> None:
         cheat_run = run_episode(task_id, ANTI_GAMING_ATTEMPTS[task_id])
         solve_run = run_episode(task_id, REFERENCE_SOLUTIONS[task_id])
 
-        ensure_open_interval(
-            [float(getattr(initial_report, field)) for field in SCORE_FIELDS],
-            f"{task_id} initial validation scores",
-        )
-        ensure_score_fields_open_interval(
+        ensure_no_validation_score_keys(
             initial_report.as_dict(),
             f"{task_id} initial validation report dict",
         )
-        ensure_score_fields_open_interval(
+        ensure_no_validation_score_keys(
             initial_report.as_public_dict(),
             f"{task_id} initial public validation report",
         )
@@ -287,19 +275,11 @@ def main() -> None:
         )
         ensure_open_interval(cheat_run["rewards"], f"{task_id} anti-gaming rewards")
         ensure_open_interval(solve_run["rewards"], f"{task_id} solve-path rewards")
-        ensure_open_interval(
-            [float(getattr(cheat_run["full_validation"], field)) for field in SCORE_FIELDS],
-            f"{task_id} cheat validation scores",
-        )
-        ensure_open_interval(
-            [float(getattr(solve_run["full_validation"], field)) for field in SCORE_FIELDS],
-            f"{task_id} solve validation scores",
-        )
-        ensure_score_fields_open_interval(
+        ensure_no_validation_score_keys(
             cheat_run["public_validation"],
             f"{task_id} cheat public validation report",
         )
-        ensure_score_fields_open_interval(
+        ensure_no_validation_score_keys(
             solve_run["public_validation"],
             f"{task_id} solve public validation report",
         )
@@ -315,7 +295,7 @@ def main() -> None:
         print(
             "[QUALITY]",
             f"task={task_id}",
-            f"initial_overall={initial_report.overall_score:.2f}",
+            f"initial_overall={initial_report.overall_ratio:.2f}",
             f"cheat_score={cheat_run['final_score']:.2f}",
             f"cheat_hidden_failures={cheat_hidden_failures}",
             f"solve_score={solve_run['final_score']:.2f}",

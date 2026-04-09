@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Strict-bound diagnostic sweep for task scores and rewards.
+"""Diagnostic sweep for true task scores and score-like payload leaks.
 
-Enumerates all tasks and inspects:
-* direct validation report objects
-* validation report serialization helpers
-* direct grade_task execution
-* environment submit-path final scores and rewards
-* cheat and strong-solve trajectories
+This script intentionally distinguishes between:
+* task outputs that are real scores/rewards and must satisfy 0 < x < 1
+* internal validation progress ratios, which are not task scores
 
-Any exact 0 or 1 score-like value is reported with the path that produced it.
+It fails if:
+* any real task score/reward hits 0 or 1
+* any validation payload still exposes internal `*_score` fields other than
+  the real `final_score`
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from __future__ import annotations
 import pathlib
 import runpy
 import sys
-from dataclasses import asdict
 from typing import Any, Dict, Iterable, List, Tuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -28,14 +27,6 @@ from env.graders import grade_task, normalize_score
 from env.models import Action, ActionType
 from env.tasks import TASKS
 from env.validation import validate_task
-
-SCORE_FIELDS = (
-    "behavioral_score",
-    "regression_score",
-    "structure_score",
-    "anti_gaming_score",
-    "overall_score",
-)
 
 
 def load_quality_fixtures() -> Tuple[Dict[str, List[Action]], Dict[str, List[Action]]]:
@@ -61,123 +52,96 @@ def grading_state_from_env(env: SoftwareLifecycleEnv) -> Dict[str, Any]:
     }
 
 
-def collect_score(payload: Dict[str, Any], field: str) -> float | None:
-    value = payload.get(field)
-    if isinstance(value, bool) or value is None:
-        return None
-    return float(value)
-
-
 def record_violation(
     violations: List[Dict[str, Any]],
     *,
     task_id: str,
     path: str,
     field: str,
-    value: float,
+    value: Any,
 ) -> None:
+    normalized = (
+        normalize_score(float(value))
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else value
+    )
     violations.append(
         {
             "task_id": task_id,
             "path": path,
             "field": field,
             "raw_value": value,
-            "normalized_value": normalize_score(value),
+            "normalized_value": normalized,
         }
     )
 
 
-def inspect_score_value(
+def inspect_real_score(
     violations: List[Dict[str, Any]],
+    collected_scores: List[float],
+    *,
     task_id: str,
     path: str,
     field: str,
-    value: float | None,
-    collected_scores: List[float],
+    value: float,
 ) -> None:
-    if value is None:
-        return
-    collected_scores.append(float(value))
-    if value in (0.0, 1.0) or not (0 < value < 1):
+    collected_scores.append(value)
+    if not (0 < value < 1):
         record_violation(
             violations,
             task_id=task_id,
             path=path,
             field=field,
-            value=float(value),
+            value=value,
         )
 
 
-def inspect_report_object(
-    report: Any,
+def inspect_real_reward(
+    violations: List[Dict[str, Any]],
+    collected_rewards: List[float],
     *,
     task_id: str,
     path: str,
-    violations: List[Dict[str, Any]],
-    collected_scores: List[float],
+    value: float,
 ) -> None:
-    for field in SCORE_FIELDS:
-        inspect_score_value(
+    collected_rewards.append(value)
+    if not (0 < value < 1):
+        record_violation(
             violations,
-            task_id,
-            path,
-            field,
-            float(getattr(report, field)),
-            collected_scores,
+            task_id=task_id,
+            path=path,
+            field="reward",
+            value=value,
         )
 
 
-def inspect_mapping(
-    payload: Dict[str, Any],
-    *,
-    task_id: str,
-    path: str,
-    violations: List[Dict[str, Any]],
-    collected_scores: List[float],
-) -> None:
-    for field in SCORE_FIELDS:
-        inspect_score_value(
-            violations,
-            task_id,
-            path,
-            field,
-            collect_score(payload, field),
-            collected_scores,
-        )
-
-
-def walk_float_leaves(obj: Any, prefix: str = "") -> Iterable[Tuple[str, float]]:
-    if isinstance(obj, bool):
-        return
-    if isinstance(obj, float):
-        yield prefix or "<root>", obj
-        return
+def walk_payload(obj: Any, prefix: str = "") -> Iterable[Tuple[str, str, Any]]:
     if isinstance(obj, dict):
         for key, value in obj.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
-            yield from walk_float_leaves(value, child_prefix)
-        return
-    if isinstance(obj, list):
+            yield child_prefix, key, value
+            yield from walk_payload(value, child_prefix)
+    elif isinstance(obj, list):
         for index, value in enumerate(obj):
             child_prefix = f"{prefix}[{index}]"
-            yield from walk_float_leaves(value, child_prefix)
+            yield from walk_payload(value, child_prefix)
 
 
-def inspect_float_tree(
-    obj: Any,
+def inspect_no_internal_score_keys(
+    violations: List[Dict[str, Any]],
     *,
     task_id: str,
     path: str,
-    violations: List[Dict[str, Any]],
+    payload: Dict[str, Any],
 ) -> None:
-    for field_path, value in walk_float_leaves(obj):
-        if value in (0.0, 1.0) or not (0 < value < 1):
+    for value_path, key, value in walk_payload(payload, path):
+        if key.endswith("_score") and key != "final_score":
             record_violation(
                 violations,
                 task_id=task_id,
-                path=f"{path}.{field_path}",
-                field=field_path,
-                value=float(value),
+                path=value_path,
+                field=key,
+                value=value,
             )
 
 
@@ -200,88 +164,57 @@ def main() -> None:
         task_id = task["task_id"]
 
         initial_report = validate_task(task, task["files"])
-        inspect_report_object(
-            initial_report,
-            task_id=task_id,
-            path="validate_task.initial.report",
-            violations=violations,
-            collected_scores=collected_scores,
-        )
-        inspect_float_tree(
-            asdict(initial_report),
-            task_id=task_id,
-            path="validate_task.initial.asdict_recursive",
-            violations=violations,
-        )
-        inspect_mapping(
-            initial_report.as_dict(),
+        inspect_no_internal_score_keys(
+            violations,
             task_id=task_id,
             path="validate_task.initial.as_dict",
-            violations=violations,
-            collected_scores=collected_scores,
+            payload=initial_report.as_dict(),
         )
-        inspect_mapping(
-            initial_report.as_public_dict(),
+        inspect_no_internal_score_keys(
+            violations,
             task_id=task_id,
             path="validate_task.initial.as_public_dict",
-            violations=violations,
-            collected_scores=collected_scores,
+            payload=initial_report.as_public_dict(),
         )
 
         env = SoftwareLifecycleEnv()
         env.reset(task_id)
-        direct_score = grade_task(task, grading_state_from_env(env))
-        inspect_score_value(
+        inspect_no_internal_score_keys(
             violations,
-            task_id,
-            "grade_task.initial",
-            "final_score",
-            direct_score,
-            collected_scores,
-        )
-        inspect_mapping(
-            env.state().get("validation_report", {}),
             task_id=task_id,
             path="env.state.after_reset.validation_report",
-            violations=violations,
-            collected_scores=collected_scores,
+            payload=env.state().get("validation_report", {}),
         )
-        inspect_float_tree(
-            env.state().get("validation_report", {}),
+        inspect_real_score(
+            violations,
+            collected_scores,
             task_id=task_id,
-            path="env.state.after_reset.validation_report_recursive",
-            violations=violations,
+            path="grade_task.initial",
+            field="final_score",
+            value=float(grade_task(task, grading_state_from_env(env))),
         )
 
         submit_result = env.step(Action(action_type=ActionType.SUBMIT))
-        inspect_score_value(
+        inspect_real_reward(
             violations,
-            task_id,
-            "env.step.submit.reward",
-            "reward",
-            float(submit_result.reward),
             collected_rewards,
+            task_id=task_id,
+            path="env.step.submit.reward",
+            value=float(submit_result.reward),
         )
-        inspect_score_value(
+        inspect_real_score(
             violations,
-            task_id,
-            "env.step.submit.info",
-            "final_score",
-            float(submit_result.info["final_score"]),
             collected_scores,
-        )
-        inspect_mapping(
-            submit_result.info.get("validation", {}),
             task_id=task_id,
-            path="env.step.submit.validation",
-            violations=violations,
-            collected_scores=collected_scores,
+            path="env.step.submit.info.final_score",
+            field="final_score",
+            value=float(submit_result.info["final_score"]),
         )
-        inspect_float_tree(
-            submit_result.info.get("validation", {}),
+        inspect_no_internal_score_keys(
+            violations,
             task_id=task_id,
-            path="env.step.submit.validation_recursive",
-            violations=violations,
+            path="env.step.submit.info.validation",
+            payload=submit_result.info.get("validation", {}),
         )
 
         for label, actions in (
@@ -292,55 +225,39 @@ def main() -> None:
             if last_result is None:
                 continue
 
-            for reward in episode_env.state()["rewards"]:
-                inspect_score_value(
+            for index, reward in enumerate(episode_env.state()["rewards"]):
+                inspect_real_reward(
                     violations,
-                    task_id,
-                    f"{label}.episode.rewards",
-                    "reward",
-                    float(reward),
                     collected_rewards,
+                    task_id=task_id,
+                    path=f"{label}.episode.rewards[{index}]",
+                    value=float(reward),
                 )
-            inspect_score_value(
+            inspect_real_score(
                 violations,
-                task_id,
-                f"{label}.episode.final_score",
-                "final_score",
-                float(last_result.info["final_score"]),
                 collected_scores,
+                task_id=task_id,
+                path=f"{label}.episode.final_score",
+                field="final_score",
+                value=float(last_result.info["final_score"]),
             )
             report = validate_task(task, episode_env.state()["files"])
-            inspect_report_object(
-                report,
-                task_id=task_id,
-                path=f"{label}.validate_task.report",
-                violations=violations,
-                collected_scores=collected_scores,
-            )
-            inspect_float_tree(
-                asdict(report),
-                task_id=task_id,
-                path=f"{label}.validate_task.asdict_recursive",
-                violations=violations,
-            )
-            inspect_mapping(
-                report.as_dict(),
+            inspect_no_internal_score_keys(
+                violations,
                 task_id=task_id,
                 path=f"{label}.validate_task.as_dict",
-                violations=violations,
-                collected_scores=collected_scores,
+                payload=report.as_dict(),
             )
-            inspect_mapping(
-                report.as_public_dict(),
+            inspect_no_internal_score_keys(
+                violations,
                 task_id=task_id,
                 path=f"{label}.validate_task.as_public_dict",
-                violations=violations,
-                collected_scores=collected_scores,
+                payload=report.as_public_dict(),
             )
 
     for violation in violations:
         print(
-            "[STRICT-BOUND-VIOLATION]",
+            "[SCORE-CONTRACT-VIOLATION]",
             f"task_id={violation['task_id']}",
             f"path={violation['path']}",
             f"field={violation['field']}",
