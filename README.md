@@ -8,7 +8,9 @@ app_port: 7860
 ---
 # SoftwareLifecycleEnv
 
-> A deterministic OpenEnv benchmark for testing, debugging, and maintenance workflows.
+> A deterministic OpenEnv benchmark for the software lifecycle: testing diagnosis, root-cause debugging, and safe code maintenance.
+
+This repository is designed to evaluate whether an agent can investigate a realistic mini codebase the way an engineer would, not just patch a visible bug until one example passes.
 
 ## Overview
 
@@ -32,6 +34,14 @@ Many small coding environments only ask an agent to edit one function until a vi
 
 This benchmark encodes those patterns in deterministic, CPU-cheap tasks with behavior-based grading and hidden regression checks.
 
+## Software Lifecycle Tasks
+
+| Task | Skill Evaluated | Example Scenario |
+|---|---|---|
+| `task_easy_testing` | Diagnose failing checks under release constraints | CI preview URL contract failure with test output, job summary, release note, and routing policy |
+| `task_medium_debugging` | Trace root cause across layers and patch the correct component | Billing API amount formatting bug caused by the helper importing the wrong config |
+| `task_hard_maintenance` | Improve code safely without breaking consumers | Shared display-name cleanup refactor across API and export code under audit/review pressure |
+
 ## Task Inventory
 
 Exactly three tasks are provided, each mapped to a different part of the software lifecycle.
@@ -41,6 +51,14 @@ Exactly three tasks are provided, each mapped to a different part of the softwar
 | `task_easy_testing` | Easy | Testing | CI preview URL contract failure | Requires diagnosing a failing router contract from test output, CI log, code, and settings |
 | `task_medium_debugging` | Medium | Debugging | Billing API amount formatting bug | The symptom appears in the endpoint layer, while the root cause lives in a helper using the wrong config |
 | `task_hard_maintenance` | Hard | Maintenance | Shared display-name cleanup refactor | Requires reducing duplication across API and export consumers while preserving both output contracts |
+
+## Agent Interaction Loop
+
+1. The agent receives a repo snapshot plus structured context such as failing checks, important files, and workflow focus.
+2. The agent inspects code, tests, logs, config, and investigation artifacts like job summaries or incident notes.
+3. The agent applies actions by inspecting files, patching a file, running deterministic validation, or submitting.
+4. The environment evaluates visible behavior, hidden regressions, and anti-gaming checks.
+5. Each step returns a reward strictly inside `(0,1)`, and final submission scoring also stays strictly inside `(0,1)`.
 
 ## Task Design
 
