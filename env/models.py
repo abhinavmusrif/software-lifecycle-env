@@ -54,9 +54,14 @@ class Observation(BaseModel):
     task_id: str = ""
     task_type: str = ""
     task_description: str = ""
+    repo_summary: str = ""
+    important_files: List[str] = Field(default_factory=list)
+    failing_checks: List[str] = Field(default_factory=list)
+    constraints: List[str] = Field(default_factory=list)
     files: Dict[str, str] = Field(default_factory=dict)
     test_output: Optional[str] = None
     last_action_result: Optional[str] = None
+    recent_actions: List[str] = Field(default_factory=list)
     steps_taken: int = 0
     max_steps: int = 10
 
@@ -80,6 +85,6 @@ class StepResult(BaseModel):
     """Full result from ``SoftwareLifecycleEnv.step()``."""
 
     observation: Observation
-    reward: float
+    reward: float = Field(..., gt=0.0, lt=1.0)
     done: bool
     info: Dict[str, Any] = Field(default_factory=dict)

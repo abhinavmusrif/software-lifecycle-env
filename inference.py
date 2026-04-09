@@ -60,9 +60,16 @@ def _r(val: float) -> str:
 # ── prompt builders ──────────────────────────────────────────────────────
 
 def _system_prompt(obs: dict) -> str:
+    important_files = obs.get("important_files") or []
+    failing_checks = obs.get("failing_checks") or []
+    constraints = obs.get("constraints") or []
     return (
         "You are a software engineering agent. Your current task:\n\n"
         f"Task: {obs['task_description']}\n\n"
+        f"Repository summary: {obs.get('repo_summary', '')}\n\n"
+        f"Important files: {json.dumps(important_files)}\n\n"
+        f"Known failing checks: {json.dumps(failing_checks)}\n\n"
+        f"Constraints: {json.dumps(constraints)}\n\n"
         f"Files in workspace:\n{json.dumps(obs['files'], indent=2)}\n\n"
         "Respond with ONLY a JSON object (no markdown, no explanation):\n"
         '  "action_type": one of "inspect_file", "apply_patch", "run_tests", "submit"\n'
@@ -77,6 +84,8 @@ def _user_prompt(obs: dict) -> str:
     parts = [f"Step {obs['steps_taken']}/{obs['max_steps']}."]
     if obs.get("last_action_result"):
         parts.append(f"Last result: {obs['last_action_result']}")
+    if obs.get("recent_actions"):
+        parts.append(f"Recent actions: {json.dumps(obs['recent_actions'])}")
     parts.append("Respond with your next action as JSON.")
     return "\n".join(parts)
 
