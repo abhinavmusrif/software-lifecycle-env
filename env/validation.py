@@ -17,6 +17,8 @@ import types
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Tuple
 
+from env.graders import normalize_score
+
 
 class ValidationError(Exception):
     """Raised when task code cannot be validated safely."""
@@ -162,11 +164,11 @@ class ValidationReport:
         """Return a full JSON-serializable internal view of the report."""
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(self.behavioral_score, 3),
-            "regression_score": round(self.regression_score, 3),
-            "structure_score": round(self.structure_score, 3),
-            "anti_gaming_score": round(self.anti_gaming_score, 3),
-            "overall_score": round(self.overall_score, 3),
+            "behavioral_score": round(normalize_score(self.behavioral_score), 6),
+            "regression_score": round(normalize_score(self.regression_score), 6),
+            "structure_score": round(normalize_score(self.structure_score), 6),
+            "anti_gaming_score": round(normalize_score(self.anti_gaming_score), 6),
+            "overall_score": round(normalize_score(self.overall_score), 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": list(self.failure_messages),
@@ -186,11 +188,11 @@ class ValidationReport:
 
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(self.behavioral_score, 3),
-            "regression_score": round(self.regression_score, 3),
-            "structure_score": round(self.structure_score, 3),
-            "anti_gaming_score": round(self.anti_gaming_score, 3),
-            "overall_score": round(self.overall_score, 3),
+            "behavioral_score": round(normalize_score(self.behavioral_score), 6),
+            "regression_score": round(normalize_score(self.regression_score), 6),
+            "structure_score": round(normalize_score(self.structure_score), 6),
+            "anti_gaming_score": round(normalize_score(self.anti_gaming_score), 6),
+            "overall_score": round(normalize_score(self.overall_score), 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": public_failures,

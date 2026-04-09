@@ -9,8 +9,18 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, Set
 
 
+EPS = 1e-6
 STRICT_MIN_SCORE = 0.01
 STRICT_MAX_SCORE = 0.99
+
+
+def normalize_score(x: float) -> float:
+    """Ensure score always stays strictly inside (0,1)."""
+    if x <= 0:
+        return EPS
+    if x >= 1:
+        return 1 - EPS
+    return x
 
 
 def clamp_score(
@@ -18,8 +28,8 @@ def clamp_score(
     lo: float = STRICT_MIN_SCORE,
     hi: float = STRICT_MAX_SCORE,
 ) -> float:
-    """Clamp *value* to the validator-safe open interval represented by [0.01, 0.99]."""
-    return round(max(lo, min(hi, value)), 2)
+    """Clamp *value* to a validator-safe range and keep it strictly inside (0,1)."""
+    return normalize_score(max(lo, min(hi, value)))
 
 
 def _coverage(items: Iterable[str], target_items: Iterable[str]) -> float:

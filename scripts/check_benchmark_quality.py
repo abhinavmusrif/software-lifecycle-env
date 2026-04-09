@@ -283,6 +283,14 @@ def main() -> None:
 
     ensure_open_interval(all_scores, "aggregate scores")
     ensure_open_interval(all_rewards, "aggregate rewards")
+    score_min = min(all_scores)
+    score_max = max(all_scores)
+    reward_min = min(all_rewards)
+    reward_max = max(all_rewards)
+    assert score_min > 0
+    assert score_max < 1
+    assert reward_min > 0
+    assert reward_max < 1
     medium_cheat_score = run_episode(
         "task_medium_debugging",
         ANTI_GAMING_ATTEMPTS["task_medium_debugging"],
@@ -291,10 +299,10 @@ def main() -> None:
         "[QUALITY] aggregate",
         f"scores_ok={all(0 < score < 1 for score in all_scores)}",
         f"rewards_ok={all(0 < reward < 1 for reward in all_rewards)}",
-        f"score_min={min(all_scores):.2f}",
-        f"score_max={max(all_scores):.2f}",
-        f"reward_min={min(all_rewards):.2f}",
-        f"reward_max={max(all_rewards):.2f}",
+        f"score_min={score_min:.6f}",
+        f"score_max={score_max:.6f}",
+        f"reward_min={reward_min:.6f}",
+        f"reward_max={reward_max:.6f}",
     )
     print(
         "[QUALITY] medium_cheat_compare",
