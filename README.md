@@ -8,33 +8,85 @@ app_port: 7860
 ---
 # SoftwareLifecycleEnv
 
-> A deterministic OpenEnv benchmark for realistic software maintenance and debugging tasks.
+> A deterministic OpenEnv benchmark for testing, debugging, and maintenance workflows.
 
 ## Overview
 
-**SoftwareLifecycleEnv** evaluates whether an agent can inspect a small codebase, identify the real source of a failure, apply a patch, validate behavior, and submit a solution. The benchmark keeps the OpenEnv interface lightweight while making the tasks feel more like day-to-day repository work.
+**SoftwareLifecycleEnv** evaluates whether an agent can work through a small but believable software repository the way an engineer would:
 
-## Motivation
+- diagnose a failing check from tests, logs, and config context
+- trace a bug across multiple modules and fix the right component
+- carry out a maintenance refactor that reduces duplication without changing public behavior
 
-Many software benchmarks collapse into toy string-editing problems. This environment instead focuses on the workflow real engineers follow:
+The benchmark stays lightweight and validator-safe, but the task design now aims to reflect the spirit of a real software lifecycle environment rather than a toy string-editing puzzle.
 
-- inspect implementation files, tests, logs, and maintenance notes
-- diagnose failures from behavior instead of magic strings
-- patch the correct module or shared abstraction
-- verify non-regression behavior before submitting
-- survive hidden deterministic regression checks that are not exposed through the public API
+## Why This Benchmark Exists
 
-The result is still deterministic and cheap to run, but much harder to game with superficial edits.
+Many small coding environments only ask an agent to edit one function until a visible example passes. Real software work is usually messier:
 
-## Tasks
+- the first symptom is often not the root cause
+- logs and config files matter
+- job summaries, incident notes, and audit comments shape investigation
+- behavior must be preserved for more than one consumer
+- maintenance work is not the same as bug fixing
 
-Exactly three tasks are provided, with increasing difficulty and stronger repo realism.
+This benchmark encodes those patterns in deterministic, CPU-cheap tasks with behavior-based grading and hidden regression checks.
 
-| Task ID | Difficulty | Scenario | What makes it realistic |
-|---|---|---|---|
-| `task_easy_testing` | Easy | Preview URL slug bug in `src/utils/slugify.py` | Requires reading both utility code and test/log context |
-| `task_medium_debugging` | Medium | Wrong invoice `amount_due` caused by a helper/presenter mismatch | Failure symptom is in the presenter test, root cause is in a helper |
-| `task_hard_maintenance` | Hard | Duplicate display-name cleanup logic across formatter modules | Requires centralizing logic in a shared helper while preserving behavior |
+## Task Inventory
+
+Exactly three tasks are provided, each mapped to a different part of the software lifecycle.
+
+| Task ID | Difficulty | Workflow Focus | Scenario | Why it feels more real |
+|---|---|---|---|---|
+| `task_easy_testing` | Easy | Testing | CI preview URL contract failure | Requires diagnosing a failing router contract from test output, CI log, code, and settings |
+| `task_medium_debugging` | Medium | Debugging | Billing API amount formatting bug | The symptom appears in the endpoint layer, while the root cause lives in a helper using the wrong config |
+| `task_hard_maintenance` | Hard | Maintenance | Shared display-name cleanup refactor | Requires reducing duplication across API and export consumers while preserving both output contracts |
+
+## Task Design
+
+### Testing task
+
+`task_easy_testing` is not just “fix a slug function.” The visible failure occurs in a router-level CI check:
+
+- `tests/test_preview_router.py` shows the broken preview URL contract
+- `logs/github_actions_preview.log` shows how CI observed the mismatch
+- `ci/job_summary.txt` frames the failure as a blocked preview-deploy release job
+- `notes/release_comment.md` explains why QA cares about ticket-prefixed preview URLs
+- `src/release_preview/router.py` shows the symptom path
+- `src/release_preview/slug_builder.py` contains the real behavior bug
+- `src/release_preview/settings.py` and `docs/preview_routing.md` define the routing rules the code must follow
+
+This is meant to feel like triaging a small release-tooling regression.
+
+### Debugging task
+
+`task_medium_debugging` is root-cause-first:
+
+- the visible failure is in `tests/test_invoice_endpoint.py`
+- the symptom appears at the endpoint layer in `src/api/invoice_endpoint.py`
+- `logs/request_trace.log` shows the call path from endpoint to helper
+- `notes/incident_summary.md` captures the production-facing symptom reported by users
+- `git/last_change.txt` adds a realistic clue about how the bug was introduced
+- the bug flows through `src/presenters/invoice_presenter.py`
+- the root cause is in `src/helpers/currency.py`
+- the agent must compare `src/config/api_formatting.py` against `src/config/dashboard_formatting.py`
+
+That makes the task about localization and reasoning across modules, not just patching the file named in the failing assertion.
+
+### Maintenance task
+
+`task_hard_maintenance` starts from a maintenance/audit problem instead of a classic red test:
+
+- `logs/duplication_audit.log` calls out the duplication risk
+- `audit/duplication_report.txt` reads like a lightweight static-analysis finding
+- `notes/tech_debt_ticket.md` frames the cleanup as backlog pressure from real engineering work
+- `review/refactor_note.md` adds reviewer constraints on what must stay stable
+- `notes/refactor_ticket.md` defines the maintenance goal
+- `docs/partner_output_contract.md` explains what behavior must remain stable
+- `src/api/customer_payload.py` and `src/exports/vendor_rows.py` duplicate cleanup logic
+- `src/shared/display_name.py` is the shared helper that should own that logic
+
+This task measures safe engineering improvement, not just bug fixing.
 
 ## Action Space
 
@@ -47,12 +99,13 @@ Exactly three tasks are provided, with increasing difficulty and stronger repo r
 
 ## Observation Space
 
-The observation model is typed with Pydantic and includes both the raw file map and extra structured context.
+The observation model is typed with Pydantic and includes both the raw file map and structured engineering context.
 
 | Field | Type | Description |
 |---|---|---|
 | `task_id` | `str` | Stable task identifier |
 | `task_type` | `str` | `easy`, `medium`, or `hard` |
+| `workflow_focus` | `str` | `testing`, `debugging`, or `maintenance` |
 | `task_description` | `str` | Human-readable objective |
 | `repo_summary` | `str` | Short environment / codebase context |
 | `important_files` | `list[str]` | Most relevant files to inspect |
@@ -67,95 +120,148 @@ The observation model is typed with Pydantic and includes both the raw file map 
 
 ## Behavioral Validation
 
-This benchmark does **not** grade success from substring insertion alone.
+This benchmark does **not** score success from magic substrings.
 
 Each task has task-specific deterministic validation that:
 
 - parses task modules with a conservative AST allowlist
 - blocks unsafe imports and dunder access
 - executes only known task modules with restricted builtins
-- calls specific target functions with fixed input/output checks
-- verifies both visible behavior and hidden regression cases
-- adds integrity and structure checks where the task requires a real refactor
-- exposes only visible failure details through the API while keeping hidden cases internal to grading
+- calls specific target functions with fixed visible and hidden checks
+- validates behavior at the right layer for the task:
+  - router-level URLs for testing
+  - endpoint-level payloads for debugging
+  - API/export outputs plus structure checks for maintenance
+- keeps hidden regression details out of the public API
 
-### Task-specific validators
+The task repos also now include lightweight investigation artifacts like CI job summaries, incident notes, and audit reports so the agent must reason from realistic engineering evidence rather than only from source code.
 
-- Easy: calls `slugify_project_name(...)` across primary and regression slug cases
-- Medium: validates both `format_cents(...)` and `present_invoice(...)`
-- Hard: validates formatter behavior in both modules and checks that duplicated logic was moved into `src/formatters/shared.py`
+## Workflow-Aware Reward Design
 
-## Trust and Anti-Gaming
+Step rewards are bounded strictly inside `(0,1)` and now reflect lifecycle-specific progress.
 
-This benchmark is intentionally harder to game than a typical small-code benchmark.
+The environment rewards:
 
-- Hidden deterministic regression cases are used in grading but are not leaked through `/step` or `/state`.
-- Validators reject constant-return and hardcoded-answer patches for the easy and medium tasks.
-- The hard task receives top credit only when both behavior is preserved and duplicated cleanup really moves into the shared helper.
-- Final scoring caps non-successful submissions well below the scripted strong solve path, even if they overfit the visible example.
-- Immediate submit without patching or testing is capped at `0.29`.
-- The previous medium hardcoded visible-case cheat landed around `0.55`; it is now capped around `0.32`.
-
-Judge-facing evidence is documented in [`BENCHMARK_REPORT.md`](C:/Users/milnazaroor/Downloads/software-lifecycle-env/BENCHMARK_REPORT.md), and the local verification harness lives at [`scripts/check_benchmark_quality.py`](C:/Users/milnazaroor/Downloads/software-lifecycle-env/scripts/check_benchmark_quality.py).
-
-## Grading
-
-Final grading combines workflow quality and validator output. It rewards:
-
-- inspecting relevant files
-- patching the correct file set
+- inspecting symptom files, implementation files, policy/config files, and contract files
+- covering multiple workflow buckets rather than reading only one code file
+- patching the correct component
 - improving behavioral validation
-- preserving non-regression cases
-- using the test/validation step before submit
+- using `run_tests` before `submit`
 
 It penalizes:
 
 - wrong-file patching
+- no-op or superficial patches
 - repeated ineffective actions
-- repeated action loops
+- patching before reviewing the right symptom/contract context
 - step overflow
 
-All final scores are clamped strictly inside `(0,1)`:
+This makes testing feel more like diagnosis, debugging feel more like root-cause tracing, and maintenance feel more like safe compatibility work.
 
-```python
-score = max(0.01, min(score, 0.99))
-```
+## Hidden Checks and Anti-Gaming
 
-So task scores are never exactly `0.0` or `1.0`.
+The benchmark is intentionally harder to game than a visible-example-only environment.
 
-Submissions that fail hidden regression or anti-gaming checks are explicitly capped below strong solve-path scores, which makes visible-only overfitting much less competitive.
+- Hidden deterministic regression cases run for every task.
+- The API exposes visible failures and hidden-failure counts, not hidden case details.
+- Integrity checks reject constant-return, visible-case-branching, and fake-refactor solutions.
+- The medium task specifically punishes visible-case money formatting hacks.
+- The hard task only reaches top score if shared structure genuinely improves.
 
-## Reward Design
+Current quality-harness evidence:
 
-Step rewards are also bounded strictly inside `(0,1)`. Rewards are shaped to reflect realistic progress:
+| Task | Initial overall | Scripted cheat score | Strong solve score |
+|---|---:|---:|---:|
+| `task_easy_testing` | `0.43` | `0.39` | `0.99` |
+| `task_medium_debugging` | `0.30` | `0.32` | `0.99` |
+| `task_hard_maintenance` | `0.44` | `0.41` | `0.99` |
 
-- higher reward for inspecting implementation files the task actually depends on
-- smaller reward for inspecting supporting tests/logs
-- strong reward for patches that improve behavioral validation
-- strong reward for passing validation in `run_tests`
-- lower reward for no-op, superficial, overfit, or hidden-regression-failing patches
-- low reward for wrong-file patches, invalid patches, and repeated ineffective actions
+The medium hardcoded visible-case cheat was previously around `0.55`; it is now capped around `0.32`.
 
-This gives agents feedback throughout the trajectory instead of only at terminal submit.
+## Why C++ Was Not Added
 
-## Sample Trajectory
+No C++ component was added in this version.
 
-One meaningful scripted solve path for `task_medium_debugging` is:
+That choice was deliberate: adding compiled task artifacts would introduce toolchain and deployment risk without enough realism gain for this benchmark size. The realism improvement here comes from:
 
-1. inspect `src/presenters/invoice_presenter.py`
-2. inspect `src/helpers/currency.py`
-3. inspect the visible test and failure log
-4. patch `src/helpers/currency.py`
-5. run validation
-6. submit
+- richer repo context
+- clearer symptom-to-cause separation
+- config- and contract-aware workflows
+- stronger behavior-preserving maintenance work
 
-The reproducible reward trajectory from the local quality harness is:
+That provides a better risk/reward tradeoff for a Hugging Face / OpenEnv hackathon submission.
+
+## Sample Strong Trajectories
+
+### Testing
+
+Typical strong path for `task_easy_testing`:
+
+1. inspect `tests/test_preview_router.py`
+2. inspect `logs/github_actions_preview.log`
+3. inspect `ci/job_summary.txt`
+4. inspect `src/release_preview/router.py`
+5. inspect `src/release_preview/slug_builder.py`
+6. inspect `src/release_preview/settings.py`
+7. inspect `notes/release_comment.md`
+8. inspect `docs/preview_routing.md`
+9. patch `src/release_preview/slug_builder.py`
+10. run validation
+11. submit
+
+Reward trajectory from the quality harness:
 
 ```text
-0.12, 0.18, 0.12, 0.12, 0.57, 0.72, 0.99
+0.16,0.12,0.12,0.12,0.14,0.14,0.10,0.10,0.41,0.72,0.99
 ```
 
-That trajectory shows the environment rewarding useful inspection, correct root-cause patching, behavioral validation, and final submission.
+### Debugging
+
+Typical strong path for `task_medium_debugging`:
+
+1. inspect `tests/test_invoice_endpoint.py`
+2. inspect `logs/api_serialization.log`
+3. inspect `logs/request_trace.log`
+4. inspect `notes/incident_summary.md`
+5. inspect `src/api/invoice_endpoint.py`
+6. inspect `src/presenters/invoice_presenter.py`
+7. inspect `src/helpers/currency.py`
+8. inspect API and dashboard formatting configs
+9. inspect `git/last_change.txt`
+10. inspect `docs/amount_formatting.md`
+11. patch `src/helpers/currency.py`
+12. run validation
+13. submit
+
+Reward trajectory from the quality harness:
+
+```text
+0.16,0.12,0.12,0.12,0.12,0.15,0.18,0.14,0.10,0.10,0.10,0.48,0.72,0.99
+```
+
+### Maintenance
+
+Typical strong path for `task_hard_maintenance`:
+
+1. inspect `logs/duplication_audit.log`
+2. inspect `audit/duplication_report.txt`
+3. inspect `docs/partner_output_contract.md`
+4. inspect `notes/tech_debt_ticket.md`
+5. inspect `review/refactor_note.md`
+6. inspect `notes/refactor_ticket.md`
+7. inspect API / export / shared-helper code
+8. inspect tests
+9. patch `src/shared/display_name.py`
+10. patch `src/api/customer_payload.py`
+11. patch `src/exports/vendor_rows.py`
+12. run validation
+13. submit
+
+Reward trajectory from the quality harness:
+
+```text
+0.14,0.10,0.10,0.10,0.10,0.10,0.18,0.14,0.18,0.10,0.11,0.16,0.17,0.72,0.99
+```
 
 ## OpenEnv Compliance
 
@@ -168,6 +274,12 @@ The repository preserves the required OpenEnv interface:
 - `openenv.yaml` is present
 - `server/app.py` serves the benchmark API
 - `inference.py` remains at the repo root
+
+All final scores and externally returned rewards are clamped strictly inside `(0,1)`:
+
+```python
+score = max(0.01, min(score, 0.99))
+```
 
 ## Setup
 
@@ -190,9 +302,7 @@ pip install -r requirements.txt
 uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
-The API will be available at `http://localhost:7860`.
-
-You can also use the packaged script:
+You can also use:
 
 ```bash
 uv run server --host 0.0.0.0 --port 7860
@@ -249,24 +359,8 @@ python inference.py
 
 The repository includes a reproducible evidence layer beyond the official validator:
 
-- [`BENCHMARK_REPORT.md`](C:/Users/milnazaroor/Downloads/software-lifecycle-env/BENCHMARK_REPORT.md): judge-facing benchmark summary, hidden-check inventory, anti-gaming rationale, and sample outcomes
-- [`scripts/check_benchmark_quality.py`](C:/Users/milnazaroor/Downloads/software-lifecycle-env/scripts/check_benchmark_quality.py): local harness that verifies score bounds, reward bounds, hidden-check secrecy, anti-gaming attempts, and strong solve paths
-
-## Baseline Trajectory Targets
-
-Illustrative optimal trajectories now look more like real debugging flows than one-line toy fixes.
-
-| Task | Typical strong path | Max final score |
-|---|---|---|
-| Easy | inspect utility -> inspect test/log -> patch utility -> run tests -> submit | `0.99` |
-| Medium | inspect presenter -> inspect helper -> inspect test/log -> patch helper -> run tests -> submit | `0.99` |
-| Hard | inspect both formatters + shared helper + ticket -> patch shared/helper callers -> run tests -> submit | `0.99` |
-
-The quality harness also demonstrates that scripted cheat attempts land much lower:
-
-- easy overfit attempt: `0.45`
-- medium hardcoded visible-case attempt: `0.32` after the final anti-gaming cap, down from `0.55`
-- hard superficial refactor attempt: `0.49`
+- [`BENCHMARK_REPORT.md`](BENCHMARK_REPORT.md): judge-facing benchmark summary, hidden-check inventory, anti-gaming rationale, and sample outcomes
+- [`scripts/check_benchmark_quality.py`](scripts/check_benchmark_quality.py): local harness that verifies score bounds, reward bounds, hidden-check secrecy, anti-gaming attempts, and strong solve paths
 
 ## Hugging Face Spaces
 

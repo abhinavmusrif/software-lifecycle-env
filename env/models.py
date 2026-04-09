@@ -53,6 +53,7 @@ class Observation(BaseModel):
 
     task_id: str = ""
     task_type: str = ""
+    workflow_focus: str = ""
     task_description: str = ""
     repo_summary: str = ""
     important_files: List[str] = Field(default_factory=list)

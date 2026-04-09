@@ -30,6 +30,17 @@ def _coverage(items: Iterable[str], target_items: Iterable[str]) -> float:
     return len(item_set & target_set) / len(target_set)
 
 
+def _bucket_coverage(task: dict, inspected_files: Iterable[str]) -> float:
+    inspected_set = set(inspected_files)
+    buckets = task.get("inspection_buckets", {})
+    if not buckets:
+        return 0.0
+    covered = sum(
+        1 for bucket_files in buckets.values() if inspected_set & set(bucket_files)
+    )
+    return covered / len(buckets)
+
+
 def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     """Grade a completed episode using task-aware validation and workflow signals."""
     inspected: Set[str] = set(env_state.get("inspected_files", set()))
@@ -38,6 +49,7 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     patch_targets = task.get("patch_targets", [])
 
     inspection_score = _coverage(inspected, relevant_files)
+    workflow_coverage = _bucket_coverage(task, inspected)
     patch_focus_score = _coverage(patched, patch_targets)
 
     wrong_patches = max(0, len(patched - set(patch_targets)))
@@ -77,7 +89,8 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     integrity_failures = int(getattr(validation_report, "integrity_failure_count", 0))
 
     raw_score = (
-        0.08 * inspection_score
+        0.05 * inspection_score
+        + 0.10 * workflow_coverage
         + 0.08 * patch_focus_score
         + 0.18 * overall
         + 0.10 * behavioral
@@ -100,6 +113,16 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
         raw_score = min(raw_score, 0.35)
     if env_state.get("helpful_patch_count", 0) == 0 and env_state.get("patch_attempt_count", 0) > 0:
         raw_score = min(raw_score, 0.45)
+    if env_state.get("patch_attempt_count", 0) > 0 and workflow_coverage < 0.5:
+        raw_score = min(raw_score, 0.42)
+
+    workflow_focus = task.get("workflow_focus")
+    if workflow_focus in {"testing", "debugging"} and env_state.get("patch_attempt_count", 0) > 0:
+        if "symptom" not in set(env_state.get("inspected_buckets", set())):
+            raw_score = min(raw_score, 0.39)
+    if workflow_focus == "maintenance" and env_state.get("patch_attempt_count", 0) > 0:
+        if "contracts" not in set(env_state.get("inspected_buckets", set())):
+            raw_score = min(raw_score, 0.41)
 
     if not bool(getattr(validation_report, "final_success", False)):
         if behavioral < 1.0:

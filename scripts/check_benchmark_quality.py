@@ -49,61 +49,94 @@ def submit() -> Action:
 
 REFERENCE_SOLUTIONS: Dict[str, List[Action]] = {
     "task_easy_testing": [
-        inspect("src/utils/slugify.py"),
-        inspect("tests/test_slugify.py"),
-        inspect("logs/pytest_easy.log"),
+        inspect("tests/test_preview_router.py"),
+        inspect("logs/github_actions_preview.log"),
+        inspect("ci/job_summary.txt"),
+        inspect("src/release_preview/router.py"),
+        inspect("src/release_preview/slug_builder.py"),
+        inspect("src/release_preview/settings.py"),
+        inspect("notes/release_comment.md"),
+        inspect("docs/preview_routing.md"),
         patch(
-            "src/utils/slugify.py",
-            "def slugify_project_name(name: str) -> str:\n"
-            "    normalized = name.strip().lower().replace('/', ' ')\n"
+            "src/release_preview/slug_builder.py",
+            "from src.release_preview.settings import PREVIEW_SEPARATOR, RESERVED_BRANCH_PREFIXES\n"
+            "\n"
+            "def build_preview_slug(branch_name: str, ticket_id: str) -> str:\n"
+            "    normalized = branch_name.strip().lower().replace('/', ' ')\n"
             "    normalized = normalized.replace('_', ' ')\n"
-            "    pieces = [piece for piece in normalized.split(' ') if piece]\n"
-            "    return '-'.join(pieces)\n",
+            "    tokens = [token for token in normalized.split(' ') if token]\n"
+            "    if tokens and tokens[0] in RESERVED_BRANCH_PREFIXES:\n"
+            "        tokens = tokens[1:]\n"
+            "    ticket_token = ticket_id.strip().lower()\n"
+            "    parts = [ticket_token] + tokens if ticket_token else list(tokens)\n"
+            "    return PREVIEW_SEPARATOR.join(parts)\n",
         ),
         run_tests(),
         submit(),
     ],
     "task_medium_debugging": [
+        inspect("tests/test_invoice_endpoint.py"),
+        inspect("logs/api_serialization.log"),
+        inspect("logs/request_trace.log"),
+        inspect("notes/incident_summary.md"),
+        inspect("src/api/invoice_endpoint.py"),
         inspect("src/presenters/invoice_presenter.py"),
         inspect("src/helpers/currency.py"),
-        inspect("tests/test_invoice_presenter.py"),
-        inspect("logs/pytest_medium.log"),
+        inspect("src/config/api_formatting.py"),
+        inspect("src/config/dashboard_formatting.py"),
+        inspect("git/last_change.txt"),
+        inspect("docs/amount_formatting.md"),
         patch(
             "src/helpers/currency.py",
+            "from src.config.api_formatting import CURRENCY_SYMBOL, AMOUNT_DECIMAL_PLACES\n"
+            "\n"
             "def format_cents(cents: int) -> str:\n"
             "    dollars = cents / 100\n"
-            "    return f'${dollars:.2f}'\n",
+            "    return f'{CURRENCY_SYMBOL}{dollars:.{AMOUNT_DECIMAL_PLACES}f}'\n",
         ),
         run_tests(),
         submit(),
     ],
     "task_hard_maintenance": [
-        inspect("src/formatters/customer_names.py"),
-        inspect("src/formatters/vendor_names.py"),
-        inspect("src/formatters/shared.py"),
-        inspect("tests/test_party_formatters.py"),
+        inspect("logs/duplication_audit.log"),
+        inspect("audit/duplication_report.txt"),
+        inspect("docs/partner_output_contract.md"),
+        inspect("notes/tech_debt_ticket.md"),
+        inspect("review/refactor_note.md"),
         inspect("notes/refactor_ticket.md"),
+        inspect("src/api/customer_payload.py"),
+        inspect("src/exports/vendor_rows.py"),
+        inspect("src/shared/display_name.py"),
+        inspect("tests/test_partner_outputs.py"),
         patch(
-            "src/formatters/shared.py",
+            "src/shared/display_name.py",
             "def normalize_display_name(parts):\n"
             "    cleaned = [part.strip().title() for part in parts if part and part.strip()]\n"
             "    return ' '.join(cleaned)\n",
         ),
         patch(
-            "src/formatters/customer_names.py",
-            "from src.formatters.shared import normalize_display_name\n"
+            "src/api/customer_payload.py",
+            "from src.shared.display_name import normalize_display_name\n"
             "\n"
-            "def format_customer_name(record: dict) -> str:\n"
+            "def build_customer_payload(record: dict) -> dict:\n"
             "    parts = [record.get('first_name', ''), record.get('last_name', '')]\n"
-            "    return normalize_display_name(parts)\n",
+            "    return {\n"
+            "        'display_name': normalize_display_name(parts),\n"
+            "        'account_tier': record.get('account_tier', '').lower(),\n"
+            "        'status': record.get('status', '').lower(),\n"
+            "    }\n",
         ),
         patch(
-            "src/formatters/vendor_names.py",
-            "from src.formatters.shared import normalize_display_name\n"
+            "src/exports/vendor_rows.py",
+            "from src.shared.display_name import normalize_display_name\n"
             "\n"
-            "def format_vendor_name(record: dict) -> str:\n"
+            "def build_vendor_row(record: dict) -> dict:\n"
             "    parts = [record.get('contact_first', ''), record.get('contact_last', '')]\n"
-            "    return normalize_display_name(parts)\n",
+            "    return {\n"
+            "        'display_name': normalize_display_name(parts),\n"
+            "        'vendor_code': record.get('vendor_code', '').upper(),\n"
+            "        'active': 'yes' if record.get('active') else 'no',\n"
+            "    }\n",
         ),
         run_tests(),
         submit(),
@@ -113,14 +146,18 @@ REFERENCE_SOLUTIONS: Dict[str, List[Action]] = {
 
 ANTI_GAMING_ATTEMPTS: Dict[str, List[Action]] = {
     "task_easy_testing": [
-        inspect("src/utils/slugify.py"),
+        inspect("src/release_preview/slug_builder.py"),
         patch(
-            "src/utils/slugify.py",
-            "def slugify_project_name(name: str) -> str:\n"
-            "    normalized = name.strip().lower().replace('/', ' ')\n"
+            "src/release_preview/slug_builder.py",
+            "from src.release_preview.settings import PREVIEW_SEPARATOR, RESERVED_BRANCH_PREFIXES\n"
+            "\n"
+            "def build_preview_slug(branch_name: str, ticket_id: str) -> str:\n"
+            "    normalized = branch_name.strip().lower().replace('/', ' ')\n"
             "    normalized = normalized.replace('_', ' ')\n"
-            "    tokens = [piece for piece in normalized.split(' ') if piece]\n"
-            "    return '_'.join(tokens)\n",
+            "    tokens = [token for token in normalized.split(' ') if token]\n"
+            "    ticket_token = ticket_id.strip().lower()\n"
+            "    pieces = [ticket_token] + tokens if ticket_token else list(tokens)\n"
+            "    return PREVIEW_SEPARATOR.join(pieces)\n",
         ),
         run_tests(),
         submit(),
@@ -129,36 +166,46 @@ ANTI_GAMING_ATTEMPTS: Dict[str, List[Action]] = {
         inspect("src/helpers/currency.py"),
         patch(
             "src/helpers/currency.py",
+            "from src.config.api_formatting import CURRENCY_SYMBOL, AMOUNT_DECIMAL_PLACES\n"
+            "\n"
             "def format_cents(cents: int) -> str:\n"
             "    if cents == 1205:\n"
-            "        return '$12.05'\n"
+            "        return f'{CURRENCY_SYMBOL}12.05'\n"
             "    dollars = cents / 100\n"
-            "    return f'${dollars:.0f}'\n",
+            "    return f'{CURRENCY_SYMBOL}{dollars:.0f}'\n",
         ),
         run_tests(),
         submit(),
     ],
     "task_hard_maintenance": [
-        inspect("src/formatters/customer_names.py"),
-        inspect("src/formatters/vendor_names.py"),
-        inspect("src/formatters/shared.py"),
+        inspect("src/api/customer_payload.py"),
+        inspect("src/exports/vendor_rows.py"),
+        inspect("src/shared/display_name.py"),
         patch(
-            "src/formatters/customer_names.py",
-            "from src.formatters.shared import normalize_display_name\n"
+            "src/api/customer_payload.py",
+            "from src.shared.display_name import normalize_display_name\n"
             "\n"
-            "def format_customer_name(record: dict) -> str:\n"
+            "def build_customer_payload(record: dict) -> dict:\n"
             "    parts = [record.get('first_name', ''), record.get('last_name', '')]\n"
             "    cleaned = [part.strip().title() for part in parts if part and part.strip()]\n"
-            "    return normalize_display_name(cleaned)\n",
+            "    return {\n"
+            "        'display_name': normalize_display_name(cleaned),\n"
+            "        'account_tier': record.get('account_tier', '').lower(),\n"
+            "        'status': record.get('status', '').lower(),\n"
+            "    }\n",
         ),
         patch(
-            "src/formatters/vendor_names.py",
-            "from src.formatters.shared import normalize_display_name\n"
+            "src/exports/vendor_rows.py",
+            "from src.shared.display_name import normalize_display_name\n"
             "\n"
-            "def format_vendor_name(record: dict) -> str:\n"
+            "def build_vendor_row(record: dict) -> dict:\n"
             "    parts = [record.get('contact_first', ''), record.get('contact_last', '')]\n"
             "    cleaned = [part.strip().title() for part in parts if part and part.strip()]\n"
-            "    return normalize_display_name(cleaned)\n",
+            "    return {\n"
+            "        'display_name': normalize_display_name(cleaned),\n"
+            "        'vendor_code': record.get('vendor_code', '').upper(),\n"
+            "        'active': 'yes' if record.get('active') else 'no',\n"
+            "    }\n",
         ),
         run_tests(),
         submit(),

@@ -480,6 +480,8 @@ def _function_compares_parameter_to_literals(
 def _looks_like_two_decimal_money_format(source: str) -> bool:
     if ".2f" in source:
         return True
+    if "AMOUNT_DECIMAL_PLACES" in source and "dollars:." in source:
+        return True
     return ("% 100" in source or "%100" in source) and ":02d" in source
 
 
@@ -621,13 +623,27 @@ def _validate_easy(task: dict, files: Dict[str, str]) -> ValidationReport:
     runtime = SafePythonRuntime(files)
     checks = _run_function_checks(
         runtime,
-        "src.utils.slugify",
-        "slugify_project_name",
+        "src.release_preview.router",
+        "build_preview_url",
         [
-            ("slug_spaces", ("  Launch Plan  ",), "launch-plan", "Visible slug case"),
-            ("slug_separators", ("Roadmap / Q4",), "roadmap-q4", "Visible separator case"),
-            ("slug_double_underscore", ("API__Client",), "api-client", "Visible underscore case"),
-            ("slug_existing_hyphen", ("Already-clean",), "already-clean", "Visible preserve-hyphen case"),
+            (
+                "preview_url_primary",
+                ("feature/Auth_Reset", "WEB-401"),
+                "https://preview.internal.example/web-401-auth-reset",
+                "Visible preview URL case",
+            ),
+            (
+                "preview_url_hotfix",
+                (" hotfix / Billing__retry ", "OPS-9"),
+                "https://preview.internal.example/ops-9-billing-retry",
+                "Visible hotfix preview URL case",
+            ),
+            (
+                "preview_url_release",
+                ("release/May_Cutover", "REL-77"),
+                "https://preview.internal.example/rel-77-may-cutover",
+                "Visible release preview URL case",
+            ),
         ],
         category="behavior",
         visibility="visible",
@@ -635,32 +651,32 @@ def _validate_easy(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.utils.slugify",
-            "slugify_project_name",
+            "src.release_preview.router",
+            "build_preview_url",
             [
                 (
-                    "slug_hidden_mixed_separators",
-                    ("  DATA__Sync / nightly  ",),
-                    "data-sync-nightly",
+                    "preview_url_hidden_api_client",
+                    ("bugfix///API__Client", "CORE-11"),
+                    "https://preview.internal.example/core-11-api-client",
+                    "Hidden bugfix branch case",
+                ),
+                (
+                    "preview_url_hidden_mixed_separators",
+                    ("feature / data_SYNC / nightly", "PLAT-204"),
+                    "https://preview.internal.example/plat-204-data-sync-nightly",
                     "Hidden mixed-separator case",
                 ),
                 (
-                    "slug_hidden_path_style",
-                    ("Ops///Board__EU",),
-                    "ops-board-eu",
-                    "Hidden path-style case",
+                    "preview_url_hidden_release_numeric",
+                    ("release/Sprint_24", "REL-24"),
+                    "https://preview.internal.example/rel-24-sprint-24",
+                    "Hidden release numeric case",
                 ),
                 (
-                    "slug_hidden_numeric",
-                    ("Sprint_24 / phase_2",),
-                    "sprint-24-phase-2",
-                    "Hidden numeric token case",
-                ),
-                (
-                    "slug_hidden_blank",
-                    ("",),
-                    "",
-                    "Hidden blank-input case",
+                    "preview_url_hidden_blank_branch",
+                    ("", "OPS-1"),
+                    "https://preview.internal.example/ops-1",
+                    "Hidden blank-branch case",
                 ),
             ],
             category="regression",
@@ -668,37 +684,82 @@ def _validate_easy(task: dict, files: Dict[str, str]) -> ValidationReport:
         )
     )
 
-    source = files.get("src/utils/slugify.py", "")
+    source = files.get("src/release_preview/slug_builder.py", "")
+    router_source = files.get("src/release_preview/router.py", "")
+    settings_source = files.get("src/release_preview/settings.py", "")
     checks.extend(
         [
             _generic_check(
-                "slug_function_exists",
-                _source_has_function(source, "slugify_project_name"),
-                "slugify_project_name must remain defined in src/utils/slugify.py",
+                "preview_slug_function_exists",
+                _source_has_function(source, "build_preview_slug"),
+                "build_preview_slug must remain defined in src/release_preview/slug_builder.py",
                 category="structure",
             ),
             _generic_check(
-                "slug_uses_input_parameter",
-                _function_uses_parameters(source, "slugify_project_name"),
-                "slugify_project_name must derive its output from the incoming name parameter",
+                "preview_router_function_exists",
+                _source_has_function(router_source, "build_preview_url"),
+                "build_preview_url must remain defined in src/release_preview/router.py",
+                category="structure",
+            ),
+            _generic_check(
+                "preview_router_imports_slug_builder",
+                "from src.release_preview.slug_builder import build_preview_slug" in router_source,
+                "build_preview_url should continue to delegate slug generation to src/release_preview/slug_builder.py",
+                category="structure",
+            ),
+            _generic_check(
+                "preview_router_uses_settings_domain",
+                "PREVIEW_DOMAIN" in router_source and "PREVIEW_DOMAIN = 'preview.internal.example'" in settings_source,
+                "build_preview_url should use PREVIEW_DOMAIN from settings",
+                category="structure",
+            ),
+            _generic_check(
+                "preview_slug_imports_settings",
+                "from src.release_preview.settings import PREVIEW_SEPARATOR, RESERVED_BRANCH_PREFIXES"
+                in source,
+                "build_preview_slug should continue to import preview-routing settings",
+                category="structure",
+            ),
+            _generic_check(
+                "preview_slug_uses_input_parameters",
+                _function_uses_parameters(source, "build_preview_slug"),
+                "build_preview_slug must derive its output from the incoming branch_name and ticket_id parameters",
                 category="integrity",
             ),
             _generic_check(
-                "slug_not_constant",
-                not _function_returns_constant_only(source, "slugify_project_name"),
-                "slugify_project_name should not collapse into a constant return value",
+                "preview_slug_not_constant",
+                not _function_returns_constant_only(source, "build_preview_slug"),
+                "build_preview_slug should not collapse into a constant return value",
                 category="integrity",
             ),
             _generic_check(
-                "slug_not_hardcoded_visible_answer",
-                not _source_contains_literal(source, "launch-plan"),
-                "slugify_project_name should not hardcode the visible slug answer",
+                "preview_slug_not_hardcoded_visible_answer",
+                not _source_contains_literal(source, "web-401-auth-reset"),
+                "build_preview_slug should not hardcode the visible preview slug answer",
                 category="integrity",
             ),
             _generic_check(
-                "slug_no_underscore_join",
+                "preview_slug_uses_config_separator",
+                "PREVIEW_SEPARATOR" in source and "PREVIEW_SEPARATOR = '-'" in settings_source,
+                "build_preview_slug should respect PREVIEW_SEPARATOR from settings",
+                category="integrity",
+            ),
+            _generic_check(
+                "preview_slug_no_underscore_join",
                 "'_'.join" not in source and '"_".join' not in source,
-                "slugify_project_name should no longer join normalized pieces with '_'",
+                "build_preview_slug should no longer join preview slug pieces with '_'",
+                category="integrity",
+            ),
+            _generic_check(
+                "preview_slug_uses_reserved_prefixes",
+                "RESERVED_BRANCH_PREFIXES" in source and "RESERVED_BRANCH_PREFIXES" in settings_source,
+                "build_preview_slug should use RESERVED_BRANCH_PREFIXES from settings",
+                category="integrity",
+            ),
+            _generic_check(
+                "preview_slug_no_visible_literals",
+                not _source_contains_any_literal(source, {"WEB-401", "Auth_Reset", "Billing__retry"}),
+                "build_preview_slug should not embed visible branch or ticket literals from the prompt",
                 category="integrity",
             ),
         ]
@@ -721,11 +782,11 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.presenters.invoice_presenter",
-            "present_invoice",
+            "src.api.invoice_endpoint",
+            "serialize_invoice_response",
             [
                 (
-                    "invoice_presenter_primary",
+                    "invoice_endpoint_primary",
                     (
                         {
                             "customer": "  Acme Corp  ",
@@ -735,12 +796,15 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
                         },
                     ),
                     {
-                        "customer": "Acme Corp",
-                        "amount_due": "$12.05",
-                        "line_items": ["monitoring", "support"],
-                        "status": "PAST_DUE",
+                        "invoice": {
+                            "customer": "Acme Corp",
+                            "amount_due": "$12.05",
+                            "line_items": ["monitoring", "support"],
+                            "status": "PAST_DUE",
+                        },
+                        "generated_by": "billing-admin-api",
                     },
-                    "Visible presenter response",
+                    "Visible endpoint response",
                 ),
             ],
             category="behavior",
@@ -764,11 +828,11 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.presenters.invoice_presenter",
-            "present_invoice",
+            "src.api.invoice_endpoint",
+            "serialize_invoice_response",
             [
                 (
-                    "invoice_presenter_hidden_small_total",
+                    "invoice_endpoint_hidden_small_total",
                     (
                         {
                             "customer": "Northwind",
@@ -778,15 +842,18 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
                         },
                     ),
                     {
-                        "customer": "Northwind",
-                        "amount_due": "$0.99",
-                        "line_items": ["alerts", "backup"],
-                        "status": "OPEN",
+                        "invoice": {
+                            "customer": "Northwind",
+                            "amount_due": "$0.99",
+                            "line_items": ["alerts", "backup"],
+                            "status": "OPEN",
+                        },
+                        "generated_by": "billing-admin-api",
                     },
-                    "Hidden small-total presenter case",
+                    "Hidden small-total endpoint case",
                 ),
                 (
-                    "invoice_presenter_hidden_zero_total",
+                    "invoice_endpoint_hidden_zero_total",
                     (
                         {
                             "customer": "  Contoso ",
@@ -796,12 +863,15 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
                         },
                     ),
                     {
-                        "customer": "Contoso",
-                        "amount_due": "$0.00",
-                        "line_items": ["triage"],
-                        "status": "CLOSED",
+                        "invoice": {
+                            "customer": "Contoso",
+                            "amount_due": "$0.00",
+                            "line_items": ["triage"],
+                            "status": "CLOSED",
+                        },
+                        "generated_by": "billing-admin-api",
                     },
-                    "Hidden zero-total presenter case",
+                    "Hidden zero-total endpoint case",
                 ),
             ],
             category="regression",
@@ -811,6 +881,9 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
 
     helper_source = files.get("src/helpers/currency.py", "")
     presenter_source = files.get("src/presenters/invoice_presenter.py", "")
+    endpoint_source = files.get("src/api/invoice_endpoint.py", "")
+    api_config_source = files.get("src/config/api_formatting.py", "")
+    dashboard_config_source = files.get("src/config/dashboard_formatting.py", "")
     checks.extend(
         [
             _generic_check(
@@ -820,9 +893,29 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
                 category="structure",
             ),
             _generic_check(
+                "helper_uses_api_formatting_config",
+                "src.config.api_formatting" in helper_source
+                and "AMOUNT_DECIMAL_PLACES" in helper_source
+                and "CURRENCY_SYMBOL" in helper_source,
+                "format_cents should depend on src/config/api_formatting.py for API payload formatting",
+                category="structure",
+            ),
+            _generic_check(
+                "endpoint_imports_presenter",
+                "from src.presenters.invoice_presenter import present_invoice" in endpoint_source,
+                "Endpoint serialization should continue to depend on src/presenters/invoice_presenter.py",
+                category="structure",
+            ),
+            _generic_check(
                 "presenter_imports_helper",
                 "from src.helpers.currency import format_cents" in presenter_source,
                 "Presenter should continue to depend on src/helpers/currency.py",
+                category="structure",
+            ),
+            _generic_check(
+                "endpoint_calls_presenter",
+                "present_invoice(" in endpoint_source,
+                "serialize_invoice_response should call present_invoice to build the invoice payload",
                 category="structure",
             ),
             _generic_check(
@@ -830,6 +923,14 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
                 "format_cents(" in presenter_source,
                 "Presenter should call format_cents for amount formatting",
                 category="structure",
+            ),
+            _generic_check(
+                "helper_not_dashboard_rounding",
+                "src.config.dashboard_formatting" not in helper_source
+                and "SUMMARY_ROUNDING_MODE" not in helper_source
+                and "SUMMARY_ROUNDING_MODE = 'whole_dollars'" in dashboard_config_source,
+                "format_cents should not use dashboard-only whole-dollar rounding for API payloads",
+                category="integrity",
             ),
             _generic_check(
                 "helper_uses_input_parameter",
@@ -852,8 +953,9 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
             ),
             _generic_check(
                 "helper_uses_real_two_decimal_formatting",
-                _looks_like_two_decimal_money_format(helper_source),
-                "format_cents should use a real two-decimal money-formatting strategy instead of whole-dollar rounding",
+                _looks_like_two_decimal_money_format(helper_source)
+                and "AMOUNT_DECIMAL_PLACES = 2" in api_config_source,
+                "format_cents should use the API config's two-decimal money-formatting strategy instead of whole-dollar rounding",
                 category="integrity",
             ),
             _generic_check(
@@ -869,10 +971,10 @@ def _validate_medium(task: dict, files: Dict[str, str]) -> ValidationReport:
             _generic_check(
                 "helper_no_visible_invoice_literals",
                 not _source_contains_any_literal(
-                    helper_source,
+                    helper_source + presenter_source + endpoint_source,
                     {"1205", "Acme Corp", "past_due"},
                 ),
-                "format_cents should not embed visible invoice-specific literals from the task prompt",
+                "Helper, presenter, and endpoint should not embed visible invoice-specific literals from the task prompt",
                 category="integrity",
             ),
         ]
@@ -884,19 +986,41 @@ def _validate_hard(task: dict, files: Dict[str, str]) -> ValidationReport:
     runtime = SafePythonRuntime(files)
     checks = _run_function_checks(
         runtime,
-        "src.formatters.customer_names",
-        "format_customer_name",
+        "src.api.customer_payload",
+        "build_customer_payload",
         [
             (
-                "customer_formatter_primary",
-                ({"first_name": "  maya", "last_name": "SINGH  "},),
-                "Maya Singh",
-                "Visible customer formatter case",
+                "customer_payload_primary",
+                (
+                    {
+                        "first_name": "  maya",
+                        "last_name": "SINGH  ",
+                        "account_tier": "ENTERPRISE",
+                        "status": "ACTIVE",
+                    },
+                ),
+                {
+                    "display_name": "Maya Singh",
+                    "account_tier": "enterprise",
+                    "status": "active",
+                },
+                "Visible customer payload case",
             ),
             (
-                "customer_formatter_partial",
-                ({"first_name": "  maya", "last_name": ""},),
-                "Maya",
+                "customer_payload_partial",
+                (
+                    {
+                        "first_name": "  maya",
+                        "last_name": "",
+                        "account_tier": "SMB",
+                        "status": "TRIAL",
+                    },
+                ),
+                {
+                    "display_name": "Maya",
+                    "account_tier": "smb",
+                    "status": "trial",
+                },
                 "Visible customer blank-last-name case",
             ),
         ],
@@ -906,19 +1030,41 @@ def _validate_hard(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.formatters.vendor_names",
-            "format_vendor_name",
+            "src.exports.vendor_rows",
+            "build_vendor_row",
             [
                 (
-                    "vendor_formatter_primary",
-                    ({"contact_first": "ops", "contact_last": "TEAM"},),
-                    "Ops Team",
-                    "Visible vendor formatter case",
+                    "vendor_row_primary",
+                    (
+                        {
+                            "contact_first": "ops",
+                            "contact_last": "TEAM",
+                            "vendor_code": "v-14",
+                            "active": True,
+                        },
+                    ),
+                    {
+                        "display_name": "Ops Team",
+                        "vendor_code": "V-14",
+                        "active": "yes",
+                    },
+                    "Visible vendor row case",
                 ),
                 (
-                    "vendor_formatter_partial",
-                    ({"contact_first": "", "contact_last": "support"},),
-                    "Support",
+                    "vendor_row_partial",
+                    (
+                        {
+                            "contact_first": "",
+                            "contact_last": "support",
+                            "vendor_code": "help-2",
+                            "active": False,
+                        },
+                    ),
+                    {
+                        "display_name": "Support",
+                        "vendor_code": "HELP-2",
+                        "active": "no",
+                    },
                     "Visible vendor blank-first-name case",
                 ),
             ],
@@ -929,19 +1075,41 @@ def _validate_hard(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.formatters.customer_names",
-            "format_customer_name",
+            "src.api.customer_payload",
+            "build_customer_payload",
             [
                 (
-                    "customer_formatter_hidden_spacing",
-                    ({"first_name": "", "last_name": " support  "},),
-                    "Support",
+                    "customer_payload_hidden_spacing",
+                    (
+                        {
+                            "first_name": "",
+                            "last_name": " support  ",
+                            "account_tier": "ENTERPRISE",
+                            "status": "ACTIVE",
+                        },
+                    ),
+                    {
+                        "display_name": "Support",
+                        "account_tier": "enterprise",
+                        "status": "active",
+                    },
                     "Hidden customer spacing case",
                 ),
                 (
-                    "customer_formatter_hidden_compound",
-                    ({"first_name": "qa", "last_name": "  lead "},),
-                    "Qa Lead",
+                    "customer_payload_hidden_compound",
+                    (
+                        {
+                            "first_name": "qa",
+                            "last_name": "  lead ",
+                            "account_tier": "MIDMARKET",
+                            "status": "PAUSED",
+                        },
+                    ),
+                    {
+                        "display_name": "Qa Lead",
+                        "account_tier": "midmarket",
+                        "status": "paused",
+                    },
                     "Hidden customer compound-name case",
                 ),
             ],
@@ -952,19 +1120,41 @@ def _validate_hard(task: dict, files: Dict[str, str]) -> ValidationReport:
     checks.extend(
         _run_function_checks(
             runtime,
-            "src.formatters.vendor_names",
-            "format_vendor_name",
+            "src.exports.vendor_rows",
+            "build_vendor_row",
             [
                 (
-                    "vendor_formatter_hidden_spacing",
-                    ({"contact_first": "  account", "contact_last": " lead  "},),
-                    "Account Lead",
+                    "vendor_row_hidden_spacing",
+                    (
+                        {
+                            "contact_first": "  account",
+                            "contact_last": " lead  ",
+                            "vendor_code": "acct-7",
+                            "active": True,
+                        },
+                    ),
+                    {
+                        "display_name": "Account Lead",
+                        "vendor_code": "ACCT-7",
+                        "active": "yes",
+                    },
                     "Hidden vendor spacing case",
                 ),
                 (
-                    "vendor_formatter_hidden_blank_last",
-                    ({"contact_first": "multi", "contact_last": ""},),
-                    "Multi",
+                    "vendor_row_hidden_blank_last",
+                    (
+                        {
+                            "contact_first": "multi",
+                            "contact_last": "",
+                            "vendor_code": "multi-3",
+                            "active": False,
+                        },
+                    ),
+                    {
+                        "display_name": "Multi",
+                        "vendor_code": "MULTI-3",
+                        "active": "no",
+                    },
                     "Hidden vendor blank-last-name case",
                 ),
             ],
@@ -973,51 +1163,51 @@ def _validate_hard(task: dict, files: Dict[str, str]) -> ValidationReport:
         )
     )
 
-    shared_source = files.get("src/formatters/shared.py", "")
-    customer_source = files.get("src/formatters/customer_names.py", "")
-    vendor_source = files.get("src/formatters/vendor_names.py", "")
+    shared_source = files.get("src/shared/display_name.py", "")
+    customer_source = files.get("src/api/customer_payload.py", "")
+    vendor_source = files.get("src/exports/vendor_rows.py", "")
     checks.extend(
         [
             _generic_check(
                 "shared_helper_exists",
                 _source_has_function(shared_source, "normalize_display_name"),
-                "src/formatters/shared.py must define normalize_display_name",
+                "src/shared/display_name.py must define normalize_display_name",
                 category="structure",
             ),
             _generic_check(
                 "customer_imports_shared",
-                "from src.formatters.shared import normalize_display_name" in customer_source,
-                "Customer formatter should import normalize_display_name from shared.py",
+                "from src.shared.display_name import normalize_display_name" in customer_source,
+                "Customer payload builder should import normalize_display_name from shared.py",
                 category="structure",
             ),
             _generic_check(
                 "vendor_imports_shared",
-                "from src.formatters.shared import normalize_display_name" in vendor_source,
-                "Vendor formatter should import normalize_display_name from shared.py",
+                "from src.shared.display_name import normalize_display_name" in vendor_source,
+                "Vendor export builder should import normalize_display_name from shared.py",
                 category="structure",
             ),
             _generic_check(
                 "customer_calls_shared",
                 "normalize_display_name(" in customer_source,
-                "Customer formatter should delegate cleanup to normalize_display_name",
+                "Customer payload builder should delegate cleanup to normalize_display_name",
                 category="structure",
             ),
             _generic_check(
                 "vendor_calls_shared",
                 "normalize_display_name(" in vendor_source,
-                "Vendor formatter should delegate cleanup to normalize_display_name",
+                "Vendor export builder should delegate cleanup to normalize_display_name",
                 category="structure",
             ),
             _generic_check(
                 "customer_duplicate_cleanup_removed",
                 ".strip().title()" not in customer_source,
-                "Customer formatter should no longer duplicate cleanup logic inline",
+                "Customer payload builder should no longer duplicate cleanup logic inline",
                 category="integrity",
             ),
             _generic_check(
                 "vendor_duplicate_cleanup_removed",
                 ".strip().title()" not in vendor_source,
-                "Vendor formatter should no longer duplicate cleanup logic inline",
+                "Vendor export builder should no longer duplicate cleanup logic inline",
                 category="integrity",
             ),
             _generic_check(

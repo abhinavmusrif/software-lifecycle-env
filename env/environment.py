@@ -29,6 +29,7 @@ class SoftwareLifecycleEnv:
         self._done: bool = True
         self._rewards: List[float] = []
         self._inspected_files: Set[str] = set()
+        self._inspected_buckets: Set[str] = set()
         self._patched_files: Set[str] = set()
         self._tests_passed: bool = False
         self._tests_run_count: int = 0
@@ -60,6 +61,7 @@ class SoftwareLifecycleEnv:
         self._done = False
         self._rewards = []
         self._inspected_files = set()
+        self._inspected_buckets = set()
         self._patched_files = set()
         self._tests_passed = False
         self._tests_run_count = 0
@@ -155,6 +157,7 @@ class SoftwareLifecycleEnv:
             "done": self._done,
             "rewards": list(self._rewards),
             "inspected_files": sorted(self._inspected_files),
+            "inspected_buckets": sorted(self._inspected_buckets),
             "patched_files": sorted(self._patched_files),
             "tests_passed": self._tests_passed,
             "tests_run_count": self._tests_run_count,
@@ -184,12 +187,50 @@ class SoftwareLifecycleEnv:
         self._last_action_result = self._files[fname]
         already_inspected = fname in self._inspected_files
         self._inspected_files.add(fname)
+        bucket = self._inspection_bucket_for_file(fname)
+        new_bucket = bool(bucket and bucket not in self._inspected_buckets)
+        if bucket:
+            self._inspected_buckets.add(bucket)
 
         if fname in self._task.get("patch_targets", []):
             info["inspect"] = "implementation_context"
-            return 0.18 if not already_inspected else 0.04
+            info["inspect_bucket"] = bucket or "implementation"
+            reward = 0.14 if not already_inspected else 0.04
+            if new_bucket and not already_inspected:
+                reward += 0.04
+            return reward
+        if bucket == "symptom":
+            info["inspect"] = "symptom_context"
+            info["inspect_bucket"] = bucket
+            reward = 0.12 if not already_inspected else 0.04
+            if new_bucket and not already_inspected:
+                reward += 0.04
+            return reward
+        if bucket in {"flow", "consumers"}:
+            info["inspect"] = "execution_path_context"
+            info["inspect_bucket"] = bucket
+            reward = 0.11 if not already_inspected else 0.04
+            if new_bucket and not already_inspected:
+                reward += 0.04
+            return reward
+        if bucket in {"policy", "contracts"}:
+            info["inspect"] = "contract_context"
+            info["inspect_bucket"] = bucket
+            reward = 0.10 if not already_inspected else 0.04
+            if new_bucket and not already_inspected:
+                reward += 0.04
+            return reward
+        if bucket == "shared_logic":
+            info["inspect"] = "shared_logic_context"
+            info["inspect_bucket"] = bucket
+            reward = 0.12 if not already_inspected else 0.04
+            if new_bucket and not already_inspected:
+                reward += 0.04
+            return reward
         if fname in self._task.get("relevant_files", []):
             info["inspect"] = "supporting_context"
+            if bucket:
+                info["inspect_bucket"] = bucket
             return 0.12 if not already_inspected else 0.04
 
         info["inspect"] = "off_target"
@@ -257,6 +298,17 @@ class SoftwareLifecycleEnv:
 
         if not is_patch_target:
             reward -= 0.03
+        else:
+            required_bucket = self._required_diagnostic_bucket()
+            if required_bucket and required_bucket not in self._inspected_buckets:
+                reward -= 0.04
+                info["workflow"] = f"patched_before_reviewing_{required_bucket}"
+            elif self._task.get("workflow_focus") in {"testing", "debugging"} and "policy" in self._task.get("inspection_buckets", {}) and "policy" not in self._inspected_buckets:
+                reward -= 0.02
+                info["workflow"] = "patched_before_reviewing_policy"
+            elif self._task.get("workflow_focus") == "maintenance" and "contracts" not in self._inspected_buckets:
+                reward -= 0.03
+                info["workflow"] = "patched_before_reviewing_contracts"
 
         self._last_action_result = (
             f"Patched {fname}. Validation now {after_report.overall_score:.2f}. "
@@ -296,6 +348,7 @@ class SoftwareLifecycleEnv:
         report = self._refresh_validation_report()
         grading_state = {
             "inspected_files": self._inspected_files,
+            "inspected_buckets": self._inspected_buckets,
             "patched_files": self._patched_files,
             "tests_run_count": self._tests_run_count,
             "steps_taken": self._steps_taken,
@@ -321,6 +374,22 @@ class SoftwareLifecycleEnv:
         assert self._task is not None
         self._last_validation_report = validate_task(self._task, self._files)
         return self._last_validation_report
+
+    def _inspection_bucket_for_file(self, filename: str) -> Optional[str]:
+        assert self._task is not None
+        for bucket, bucket_files in self._task.get("inspection_buckets", {}).items():
+            if filename in bucket_files:
+                return bucket
+        return None
+
+    def _required_diagnostic_bucket(self) -> Optional[str]:
+        assert self._task is not None
+        workflow_focus = self._task.get("workflow_focus")
+        if workflow_focus in {"testing", "debugging"}:
+            return "symptom"
+        if workflow_focus == "maintenance":
+            return "contracts"
+        return None
 
     def _format_test_output(self, report: ValidationReport) -> str:
         if report.final_success:
@@ -350,6 +419,7 @@ class SoftwareLifecycleEnv:
         return Observation(
             task_id=self._task["task_id"] if self._task else "",
             task_type=self._task["task_type"] if self._task else "",
+            workflow_focus=self._task.get("workflow_focus", "") if self._task else "",
             task_description=self._task["task_description"] if self._task else "",
             repo_summary=self._task.get("repo_summary", "") if self._task else "",
             important_files=list(self._task.get("important_files", [])) if self._task else [],
