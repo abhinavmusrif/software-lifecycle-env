@@ -68,7 +68,7 @@ class Observation(BaseModel):
 class RewardInfo(BaseModel):
     """Reward metadata for a single step."""
 
-    reward: float = Field(0.0, ge=-1.0, le=1.0)
+    reward: float = Field(0.01, gt=0.0, lt=1.0)
     reason: str = ""
 
 

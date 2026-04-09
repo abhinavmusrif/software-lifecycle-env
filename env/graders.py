@@ -1,6 +1,6 @@
 """Deterministic grading helpers for SoftwareLifecycleEnv.
 
-Scoring rubric (partial credit, clamped to [0.0, 1.0]):
+Scoring rubric (partial credit, clamped to (0.0, 1.0)):
   Inspected correct file   → +0.20
   Patched correct file     → +0.30
   Patch contains pattern   → +0.20
@@ -10,6 +10,9 @@ Scoring rubric (partial credit, clamped to [0.0, 1.0]):
 from __future__ import annotations
 
 from typing import Any, Dict, Set
+
+STRICT_MIN_SCORE = 0.01
+STRICT_MAX_SCORE = 0.99
 
 
 def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
@@ -29,7 +32,7 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     Returns
     -------
     float
-        Final score in [0.0, 1.0].
+        Final score in (0.0, 1.0).
     """
     score = 0.0
 
@@ -55,9 +58,13 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     if env_state.get("tests_passed", False):
         score += 0.30
 
-    return _clamp(score)
+    return clamp_score(score)
 
 
-def _clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    """Clamp *value* to [lo, hi]."""
-    return max(lo, min(hi, value))
+def clamp_score(
+    value: float,
+    lo: float = STRICT_MIN_SCORE,
+    hi: float = STRICT_MAX_SCORE,
+) -> float:
+    """Clamp *value* to a strict open interval represented by [0.01, 0.99]."""
+    return round(max(lo, min(hi, value)), 2)

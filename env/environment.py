@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Optional, Set
 
-from env.graders import grade_task
+from env.graders import clamp_score, grade_task
 from env.models import Action, ActionType, Observation, StepResult
 from env.tasks import TASKS, get_task, list_task_ids
 
@@ -68,7 +68,7 @@ class SoftwareLifecycleEnv:
         if self._done:
             return StepResult(
                 observation=self._build_observation(),
-                reward=0.0,
+                reward=clamp_score(0.0),
                 done=True,
                 info={"error": "Episode already done. Call reset()."},
             )
@@ -104,7 +104,7 @@ class SoftwareLifecycleEnv:
             info["penalty"] = (info["penalty"] + " exceeded_max_steps").strip()
             self._done = True
 
-        reward = round(reward, 2)
+        reward = clamp_score(reward)
         self._rewards.append(reward)
 
         return StepResult(
@@ -204,7 +204,7 @@ class SoftwareLifecycleEnv:
             "1 failed, 0 passed."
         )
         info["tests"] = "failed"
-        return 0.0
+        return 0.01
 
     def _handle_submit(self, info: dict) -> float:
         """End episode and return the final grading score as reward."""
