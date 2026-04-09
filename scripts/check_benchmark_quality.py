@@ -25,6 +25,13 @@ from env.tasks import TASKS, get_task
 from env.validation import validate_task
 
 PREVIOUS_MEDIUM_CHEAT_SCORE = 0.55
+SCORE_FIELDS = (
+    "behavioral_score",
+    "regression_score",
+    "structure_score",
+    "anti_gaming_score",
+    "overall_score",
+)
 
 
 def inspect(path: str) -> Action:
@@ -244,6 +251,13 @@ def ensure_hidden_checks_stay_hidden(public_validation: dict) -> None:
         raise AssertionError("Public validation surface leaked a hidden check.")
 
 
+def ensure_score_fields_open_interval(payload: dict, label: str) -> None:
+    ensure_open_interval(
+        [float(payload[field]) for field in SCORE_FIELDS if field in payload],
+        label,
+    )
+
+
 def main() -> None:
     all_scores: List[float] = []
     all_rewards: List[float] = []
@@ -256,11 +270,39 @@ def main() -> None:
         solve_run = run_episode(task_id, REFERENCE_SOLUTIONS[task_id])
 
         ensure_open_interval(
+            [float(getattr(initial_report, field)) for field in SCORE_FIELDS],
+            f"{task_id} initial validation scores",
+        )
+        ensure_score_fields_open_interval(
+            initial_report.as_dict(),
+            f"{task_id} initial validation report dict",
+        )
+        ensure_score_fields_open_interval(
+            initial_report.as_public_dict(),
+            f"{task_id} initial public validation report",
+        )
+        ensure_open_interval(
             [cheat_run["final_score"], solve_run["final_score"]],
             f"{task_id} final scores",
         )
         ensure_open_interval(cheat_run["rewards"], f"{task_id} anti-gaming rewards")
         ensure_open_interval(solve_run["rewards"], f"{task_id} solve-path rewards")
+        ensure_open_interval(
+            [float(getattr(cheat_run["full_validation"], field)) for field in SCORE_FIELDS],
+            f"{task_id} cheat validation scores",
+        )
+        ensure_open_interval(
+            [float(getattr(solve_run["full_validation"], field)) for field in SCORE_FIELDS],
+            f"{task_id} solve validation scores",
+        )
+        ensure_score_fields_open_interval(
+            cheat_run["public_validation"],
+            f"{task_id} cheat public validation report",
+        )
+        ensure_score_fields_open_interval(
+            solve_run["public_validation"],
+            f"{task_id} solve public validation report",
+        )
         ensure_hidden_checks_stay_hidden(cheat_run["public_validation"])
         ensure_hidden_checks_stay_hidden(solve_run["public_validation"])
 

@@ -273,7 +273,6 @@ class SoftwareLifecycleEnv:
         anti_gaming_delta = after_report.anti_gaming_score - before_report.anti_gaming_score
         is_patch_target = fname in self._task.get("patch_targets", [])
         hidden_failures = after_report.hidden_failure_count
-        confidence = min(after_report.regression_score, after_report.anti_gaming_score)
 
         reward = 0.06 if is_patch_target else 0.03
         if delta > 0:
@@ -284,7 +283,11 @@ class SoftwareLifecycleEnv:
             reward += 0.06 * max(0.0, structure_delta)
             reward += 0.06 * max(0.0, anti_gaming_delta)
             info["patch"] = "improved_behavior"
-            if after_report.behavioral_score == 1.0 and (hidden_failures > 0 or confidence < 1.0):
+            if after_report.behavioral_complete and (
+                hidden_failures > 0
+                or not after_report.regression_complete
+                or not after_report.anti_gaming_complete
+            ):
                 reward = min(reward, 0.16 if is_patch_target else 0.10)
                 info["patch"] = "overfit_progress"
         elif delta == 0:
@@ -336,8 +339,8 @@ class SoftwareLifecycleEnv:
         info["tests"] = "failed"
         reward = 0.05 + (0.24 * report.overall_score) + (0.08 * max(0.0, improvement))
         reward += 0.06 * min(report.regression_score, report.anti_gaming_score)
-        if report.behavioral_score == 1.0 and (
-            report.hidden_failure_count > 0 or report.anti_gaming_score < 1.0
+        if report.behavioral_complete and (
+            report.hidden_failure_count > 0 or not report.anti_gaming_complete
         ):
             reward = min(reward, 0.16)
         return reward

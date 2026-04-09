@@ -119,10 +119,22 @@ class ValidationReport:
     structure_score: float
     anti_gaming_score: float
     overall_score: float
+    behavioral_complete: bool
+    regression_complete: bool
+    structure_complete: bool
+    anti_gaming_complete: bool
     final_success: bool
     summary: str
     failure_messages: List[str] = field(default_factory=list)
     checks: List[ValidationCheck] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Normalize numeric score fields while preserving raw completion flags."""
+        self.behavioral_score = normalize_score(self.behavioral_score)
+        self.regression_score = normalize_score(self.regression_score)
+        self.structure_score = normalize_score(self.structure_score)
+        self.anti_gaming_score = normalize_score(self.anti_gaming_score)
+        self.overall_score = normalize_score(self.overall_score)
 
     @property
     def passed_checks(self) -> int:
@@ -164,11 +176,11 @@ class ValidationReport:
         """Return a full JSON-serializable internal view of the report."""
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(normalize_score(self.behavioral_score), 6),
-            "regression_score": round(normalize_score(self.regression_score), 6),
-            "structure_score": round(normalize_score(self.structure_score), 6),
-            "anti_gaming_score": round(normalize_score(self.anti_gaming_score), 6),
-            "overall_score": round(normalize_score(self.overall_score), 6),
+            "behavioral_score": round(self.behavioral_score, 6),
+            "regression_score": round(self.regression_score, 6),
+            "structure_score": round(self.structure_score, 6),
+            "anti_gaming_score": round(self.anti_gaming_score, 6),
+            "overall_score": round(self.overall_score, 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": list(self.failure_messages),
@@ -188,11 +200,11 @@ class ValidationReport:
 
         return {
             "task_id": self.task_id,
-            "behavioral_score": round(normalize_score(self.behavioral_score), 6),
-            "regression_score": round(normalize_score(self.regression_score), 6),
-            "structure_score": round(normalize_score(self.structure_score), 6),
-            "anti_gaming_score": round(normalize_score(self.anti_gaming_score), 6),
-            "overall_score": round(normalize_score(self.overall_score), 6),
+            "behavioral_score": round(self.behavioral_score, 6),
+            "regression_score": round(self.regression_score, 6),
+            "structure_score": round(self.structure_score, 6),
+            "anti_gaming_score": round(self.anti_gaming_score, 6),
+            "overall_score": round(self.overall_score, 6),
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": public_failures,
@@ -578,6 +590,10 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
     regression = _ratio(checks, category="regression")
     structure = _ratio(checks, category="structure")
     anti_gaming = _ratio(checks, category="integrity")
+    behavioral_complete = behavioral == 1.0
+    regression_complete = regression == 1.0
+    structure_complete = structure >= 0.99
+    anti_gaming_complete = anti_gaming == 1.0
 
     if task_id == "task_hard_maintenance":
         overall = (
@@ -587,10 +603,10 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
             + 0.60 * anti_gaming
         )
         success = (
-            behavioral == 1.0
-            and regression == 1.0
-            and structure >= 0.99
-            and anti_gaming == 1.0
+            behavioral_complete
+            and regression_complete
+            and structure_complete
+            and anti_gaming_complete
         )
     else:
         overall = (
@@ -600,10 +616,10 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
             + 0.20 * anti_gaming
         )
         success = (
-            behavioral == 1.0
-            and regression == 1.0
+            behavioral_complete
+            and regression_complete
             and structure >= 0.67
-            and anti_gaming == 1.0
+            and anti_gaming_complete
         )
 
     summary, failures = _build_summary(task_id, checks)
@@ -614,6 +630,10 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
         structure_score=structure,
         anti_gaming_score=anti_gaming,
         overall_score=overall,
+        behavioral_complete=behavioral_complete,
+        regression_complete=regression_complete,
+        structure_complete=structure_complete,
+        anti_gaming_complete=anti_gaming_complete,
         final_success=success,
         summary=summary,
         failure_messages=failures,

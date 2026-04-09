@@ -95,6 +95,9 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     structure = float(getattr(validation_report, "structure_score", 0.0))
     anti_gaming = float(getattr(validation_report, "anti_gaming_score", 0.0))
     overall = float(getattr(validation_report, "overall_score", 0.0))
+    behavioral_complete = bool(getattr(validation_report, "behavioral_complete", False))
+    regression_complete = bool(getattr(validation_report, "regression_complete", False))
+    anti_gaming_complete = bool(getattr(validation_report, "anti_gaming_complete", False))
     hidden_failures = len(getattr(validation_report, "hidden_failure_messages", []))
     integrity_failures = int(getattr(validation_report, "integrity_failure_count", 0))
 
@@ -135,16 +138,16 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
             raw_score = min(raw_score, 0.41)
 
     if not bool(getattr(validation_report, "final_success", False)):
-        if behavioral < 1.0:
+        if not behavioral_complete:
             raw_score = min(raw_score, 0.49)
-        if regression < 1.0 or anti_gaming < 1.0:
+        if not regression_complete or not anti_gaming_complete:
             raw_score = min(raw_score, 0.55)
         if task.get("task_id") == "task_medium_debugging":
-            if behavioral == 1.0 and (regression < 0.5 or anti_gaming < 0.8):
+            if behavioral_complete and (regression < 0.5 or anti_gaming < 0.8):
                 raw_score = min(raw_score, 0.35)
             if hidden_failures >= 4 or integrity_failures >= 2:
                 raw_score = min(raw_score, 0.32)
-        if task.get("task_id") == "task_hard_maintenance" and anti_gaming < 1.0:
+        if task.get("task_id") == "task_hard_maintenance" and not anti_gaming_complete:
             raw_score = min(raw_score, 0.49)
 
     return clamp_score(raw_score)
