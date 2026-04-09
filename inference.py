@@ -11,7 +11,7 @@ client.  Reads environment variables:
 Log format (exact):
   [START] task=<task_name> env=<benchmark> model=<model_name>
   [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-  [END]   success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+  [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...,rn>
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from typing import List
 from openai import OpenAI
 
 from env.environment import SoftwareLifecycleEnv
+from env.graders import clamp_score
 from env.models import Action, ActionType
 from env.tasks import list_task_ids
 
@@ -117,6 +118,7 @@ def run_task(env: SoftwareLifecycleEnv, task_id: str, client: OpenAI) -> None:
     obs_dict = obs.model_dump()
     rewards: List[float] = []
     step_num = 0
+    final_score = 0.01
 
     try:
         while not env.state()["done"]:
@@ -139,6 +141,9 @@ def run_task(env: SoftwareLifecycleEnv, task_id: str, client: OpenAI) -> None:
                 action = Action(action_type=ActionType.SUBMIT)
                 result = env.step(action)
                 rewards.append(result.reward)
+                final_score = float(
+                    result.info.get("final_score", clamp_score(result.reward))
+                )
                 print(
                     f"[STEP] step={step_num} action=submit "
                     f"reward={_r(result.reward)} done={_b(result.done)} "
@@ -157,6 +162,8 @@ def run_task(env: SoftwareLifecycleEnv, task_id: str, client: OpenAI) -> None:
             # Execute the action
             result = env.step(action)
             rewards.append(result.reward)
+            if "final_score" in result.info:
+                final_score = float(result.info["final_score"])
 
             if error_msg is None and result.info.get("error"):
                 error_msg = str(result.info["error"])
@@ -174,12 +181,21 @@ def run_task(env: SoftwareLifecycleEnv, task_id: str, client: OpenAI) -> None:
         # Emit END
         success = env.state().get("tests_passed", False)
         rewards_str = ",".join(_r(r) for r in rewards)
-        print(f"[END] success={_b(success)} steps={step_num} rewards={rewards_str}")
+        print(
+            f"[END] success={_b(success)} steps={step_num} "
+            f"score={_r(clamp_score(final_score))} rewards={rewards_str}"
+        )
 
     except Exception:
         # Always emit END, even on unexpected exceptions
         rewards_str = ",".join(_r(r) for r in rewards)
-        print(f"[END] success=false steps={step_num} rewards={rewards_str}")
+        fallback_score = final_score
+        if fallback_score <= 0 and rewards:
+            fallback_score = sum(rewards) / len(rewards)
+        print(
+            f"[END] success=false steps={step_num} "
+            f"score={_r(clamp_score(fallback_score))} rewards={rewards_str}"
+        )
         traceback.print_exc()
 
 
