@@ -90,11 +90,21 @@ def grade_task(task: dict, env_state: Dict[str, Any]) -> float:
     )
 
     validation_report = env_state.get("validation_report")
-    behavioral = float(getattr(validation_report, "behavioral_ratio", 0.0))
-    regression = float(getattr(validation_report, "regression_ratio", 0.0))
-    structure = float(getattr(validation_report, "structure_ratio", 0.0))
-    anti_gaming = float(getattr(validation_report, "anti_gaming_ratio", 0.0))
-    overall = float(getattr(validation_report, "overall_ratio", 0.0))
+    behavioral = float(
+        validation_report.behavioral_progress() if validation_report is not None else 0.0
+    )
+    regression = float(
+        validation_report.regression_progress() if validation_report is not None else 0.0
+    )
+    structure = float(
+        validation_report.structure_progress() if validation_report is not None else 0.0
+    )
+    anti_gaming = float(
+        validation_report.anti_gaming_progress() if validation_report is not None else 0.0
+    )
+    overall = float(
+        validation_report.overall_progress() if validation_report is not None else 0.0
+    )
     behavioral_complete = bool(getattr(validation_report, "behavioral_complete", False))
     regression_complete = bool(getattr(validation_report, "regression_complete", False))
     anti_gaming_complete = bool(getattr(validation_report, "anti_gaming_complete", False))

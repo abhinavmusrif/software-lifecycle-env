@@ -45,8 +45,8 @@ class SoftwareLifecycleEnv:
         self._overflowed: bool = False
         self._last_action_result: Optional[str] = None
         self._last_validation_report: Optional[ValidationReport] = None
-        self._best_validation_ratio: float = 0.0
-        self._last_test_ratio: float = 0.0
+        self._best_validation_progress: float = 0.0
+        self._last_test_progress: float = 0.0
 
     def reset(self, task_id: Optional[str] = None) -> Observation:
         """Reset the environment to a fresh task."""
@@ -77,8 +77,8 @@ class SoftwareLifecycleEnv:
         self._overflowed = False
         self._last_action_result = None
         self._last_validation_report = self._refresh_validation_report()
-        self._best_validation_ratio = self._last_validation_report.overall_ratio
-        self._last_test_ratio = self._last_validation_report.overall_ratio
+        self._best_validation_progress = self._last_validation_report.overall_progress()
+        self._last_test_progress = self._last_validation_report.overall_progress()
 
         return self._build_observation()
 
@@ -264,13 +264,24 @@ class SoftwareLifecycleEnv:
             self._wrong_patch_count += 1
 
         after_report = self._refresh_validation_report()
-        self._best_validation_ratio = max(self._best_validation_ratio, after_report.overall_ratio)
+        self._best_validation_progress = max(
+            self._best_validation_progress,
+            after_report.overall_progress(),
+        )
 
-        delta = after_report.overall_ratio - before_report.overall_ratio
-        behavior_delta = after_report.behavioral_ratio - before_report.behavioral_ratio
-        regression_delta = after_report.regression_ratio - before_report.regression_ratio
-        structure_delta = after_report.structure_ratio - before_report.structure_ratio
-        anti_gaming_delta = after_report.anti_gaming_ratio - before_report.anti_gaming_ratio
+        delta = after_report.overall_progress() - before_report.overall_progress()
+        behavior_delta = (
+            after_report.behavioral_progress() - before_report.behavioral_progress()
+        )
+        regression_delta = (
+            after_report.regression_progress() - before_report.regression_progress()
+        )
+        structure_delta = (
+            after_report.structure_progress() - before_report.structure_progress()
+        )
+        anti_gaming_delta = (
+            after_report.anti_gaming_progress() - before_report.anti_gaming_progress()
+        )
         is_patch_target = fname in self._task.get("patch_targets", [])
         hidden_failures = after_report.hidden_failure_count
 
@@ -314,7 +325,7 @@ class SoftwareLifecycleEnv:
                 info["workflow"] = "patched_before_reviewing_contracts"
 
         self._last_action_result = (
-            f"Patched {fname}. Validation now {after_report.overall_ratio:.2f}. "
+            f"Patched {fname}. Validation now {after_report.overall_progress():.2f}. "
             f"{after_report.summary}"
         )
         info["validation"] = after_report.as_public_dict()
@@ -323,9 +334,12 @@ class SoftwareLifecycleEnv:
     def _handle_run_tests(self, info: dict) -> float:
         report = self._refresh_validation_report()
         self._tests_run_count += 1
-        improvement = report.overall_ratio - self._last_test_ratio
-        self._last_test_ratio = report.overall_ratio
-        self._best_validation_ratio = max(self._best_validation_ratio, report.overall_ratio)
+        improvement = report.overall_progress() - self._last_test_progress
+        self._last_test_progress = report.overall_progress()
+        self._best_validation_progress = max(
+            self._best_validation_progress,
+            report.overall_progress(),
+        )
 
         info["validation"] = report.as_public_dict()
         if report.final_success:
@@ -337,8 +351,8 @@ class SoftwareLifecycleEnv:
         self._tests_passed = False
         self._last_action_result = self._format_test_output(report)
         info["tests"] = "failed"
-        reward = 0.05 + (0.24 * report.overall_ratio) + (0.08 * max(0.0, improvement))
-        reward += 0.06 * min(report.regression_ratio, report.anti_gaming_ratio)
+        reward = 0.05 + (0.24 * report.overall_progress()) + (0.08 * max(0.0, improvement))
+        reward += 0.06 * min(report.regression_progress(), report.anti_gaming_progress())
         if report.behavioral_complete and (
             report.hidden_failure_count > 0 or not report.anti_gaming_complete
         ):

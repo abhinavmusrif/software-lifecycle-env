@@ -295,7 +295,7 @@ def main() -> None:
         print(
             "[QUALITY]",
             f"task={task_id}",
-            f"initial_overall={initial_report.overall_ratio:.2f}",
+            f"initial_overall={initial_report.overall_progress():.2f}",
             f"cheat_score={cheat_run['final_score']:.2f}",
             f"cheat_hidden_failures={cheat_hidden_failures}",
             f"solve_score={solve_run['final_score']:.2f}",

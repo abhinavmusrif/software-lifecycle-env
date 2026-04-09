@@ -103,7 +103,6 @@ class ValidationCheck:
     visibility: str
     passed: bool
     detail: str
-    weight: float = 1.0
 
 
 @dataclass
@@ -111,11 +110,14 @@ class ValidationReport:
     """Structured task validation summary."""
 
     task_id: str
-    behavioral_ratio: float
-    regression_ratio: float
-    structure_ratio: float
-    anti_gaming_ratio: float
-    overall_ratio: float
+    behavioral_passed: int
+    behavioral_total: int
+    regression_passed: int
+    regression_total: int
+    structure_passed: int
+    structure_total: int
+    anti_gaming_passed: int
+    anti_gaming_total: int
     behavioral_complete: bool
     regression_complete: bool
     structure_complete: bool
@@ -124,6 +126,39 @@ class ValidationReport:
     summary: str
     failure_messages: List[str] = field(default_factory=list)
     checks: List[ValidationCheck] = field(default_factory=list)
+
+    @staticmethod
+    def _progress(passed: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return passed / total
+
+    def behavioral_progress(self) -> float:
+        return self._progress(self.behavioral_passed, self.behavioral_total)
+
+    def regression_progress(self) -> float:
+        return self._progress(self.regression_passed, self.regression_total)
+
+    def structure_progress(self) -> float:
+        return self._progress(self.structure_passed, self.structure_total)
+
+    def anti_gaming_progress(self) -> float:
+        return self._progress(self.anti_gaming_passed, self.anti_gaming_total)
+
+    def overall_progress(self) -> float:
+        if self.task_id == "task_hard_maintenance":
+            return (
+                0.05 * self.behavioral_progress()
+                + 0.10 * self.regression_progress()
+                + 0.25 * self.structure_progress()
+                + 0.60 * self.anti_gaming_progress()
+            )
+        return (
+            0.20 * self.behavioral_progress()
+            + 0.45 * self.regression_progress()
+            + 0.15 * self.structure_progress()
+            + 0.20 * self.anti_gaming_progress()
+        )
 
     @property
     def passed_checks(self) -> int:
@@ -165,11 +200,18 @@ class ValidationReport:
         """Return a full JSON-serializable internal view of the report."""
         return {
             "task_id": self.task_id,
-            "behavioral_ratio": round(self.behavioral_ratio, 6),
-            "regression_ratio": round(self.regression_ratio, 6),
-            "structure_ratio": round(self.structure_ratio, 6),
-            "anti_gaming_ratio": round(self.anti_gaming_ratio, 6),
-            "overall_ratio": round(self.overall_ratio, 6),
+            "behavioral_passed": self.behavioral_passed,
+            "behavioral_total": self.behavioral_total,
+            "regression_passed": self.regression_passed,
+            "regression_total": self.regression_total,
+            "structure_passed": self.structure_passed,
+            "structure_total": self.structure_total,
+            "anti_gaming_passed": self.anti_gaming_passed,
+            "anti_gaming_total": self.anti_gaming_total,
+            "behavioral_complete": self.behavioral_complete,
+            "regression_complete": self.regression_complete,
+            "structure_complete": self.structure_complete,
+            "anti_gaming_complete": self.anti_gaming_complete,
             "final_success": self.final_success,
             "summary": self.summary,
             "failure_messages": list(self.failure_messages),
@@ -375,23 +417,20 @@ class SafePythonRuntime:
         return function
 
 
-def _ratio(
+def _count_checks(
     checks: Sequence[ValidationCheck],
     *,
     category: str | None = None,
     visibility: str | None = None,
-) -> float:
+) -> Tuple[int, int]:
     scoped = [
         check
         for check in checks
         if (category is None or check.category == category)
         and (visibility is None or check.visibility == visibility)
     ]
-    if not scoped:
-        return 0.0
-    total = sum(check.weight for check in scoped)
-    passed = sum(check.weight for check in scoped if check.passed)
-    return passed / total if total else 0.0
+    passed = sum(1 for check in scoped if check.passed)
+    return passed, len(scoped)
 
 
 def _get_function_def(source: str, function_name: str) -> ast.FunctionDef | None:
@@ -570,22 +609,28 @@ def _generic_check(
 
 def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationReport:
     task_id = task["task_id"]
-    behavioral = _ratio(checks, category="behavior")
-    regression = _ratio(checks, category="regression")
-    structure = _ratio(checks, category="structure")
-    anti_gaming = _ratio(checks, category="integrity")
-    behavioral_complete = behavioral == 1.0
-    regression_complete = regression == 1.0
-    structure_complete = structure >= 0.99
-    anti_gaming_complete = anti_gaming == 1.0
+    behavioral_passed, behavioral_total = _count_checks(checks, category="behavior")
+    regression_passed, regression_total = _count_checks(checks, category="regression")
+    structure_passed, structure_total = _count_checks(checks, category="structure")
+    anti_gaming_passed, anti_gaming_total = _count_checks(checks, category="integrity")
+
+    behavioral_progress = ValidationReport._progress(behavioral_passed, behavioral_total)
+    regression_progress = ValidationReport._progress(regression_passed, regression_total)
+    structure_progress = ValidationReport._progress(structure_passed, structure_total)
+    anti_gaming_progress = ValidationReport._progress(anti_gaming_passed, anti_gaming_total)
+
+    behavioral_complete = (
+        behavioral_total > 0 and behavioral_passed == behavioral_total
+    )
+    regression_complete = (
+        regression_total > 0 and regression_passed == regression_total
+    )
+    structure_complete = structure_progress >= 0.99
+    anti_gaming_complete = (
+        anti_gaming_total > 0 and anti_gaming_passed == anti_gaming_total
+    )
 
     if task_id == "task_hard_maintenance":
-        overall = (
-            0.05 * behavioral
-            + 0.10 * regression
-            + 0.25 * structure
-            + 0.60 * anti_gaming
-        )
         success = (
             behavioral_complete
             and regression_complete
@@ -593,27 +638,24 @@ def _finalize_report(task: dict, checks: List[ValidationCheck]) -> ValidationRep
             and anti_gaming_complete
         )
     else:
-        overall = (
-            0.20 * behavioral
-            + 0.45 * regression
-            + 0.15 * structure
-            + 0.20 * anti_gaming
-        )
         success = (
             behavioral_complete
             and regression_complete
-            and structure >= 0.67
+            and structure_progress >= 0.67
             and anti_gaming_complete
         )
 
     summary, failures = _build_summary(task_id, checks)
     return ValidationReport(
         task_id=task_id,
-        behavioral_ratio=behavioral,
-        regression_ratio=regression,
-        structure_ratio=structure,
-        anti_gaming_ratio=anti_gaming,
-        overall_ratio=overall,
+        behavioral_passed=behavioral_passed,
+        behavioral_total=behavioral_total,
+        regression_passed=regression_passed,
+        regression_total=regression_total,
+        structure_passed=structure_passed,
+        structure_total=structure_total,
+        anti_gaming_passed=anti_gaming_passed,
+        anti_gaming_total=anti_gaming_total,
         behavioral_complete=behavioral_complete,
         regression_complete=regression_complete,
         structure_complete=structure_complete,

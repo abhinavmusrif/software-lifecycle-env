@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnostic sweep for true task scores and score-like payload leaks.
+"""Diagnostic sweep for true task scores and hidden numeric boundary leaks.
 
 This script intentionally distinguishes between:
 * task outputs that are real scores/rewards and must satisfy 0 < x < 1
@@ -7,8 +7,8 @@ This script intentionally distinguishes between:
 
 It fails if:
 * any real task score/reward hits 0 or 1
-* any validation payload still exposes internal `*_score` fields other than
-  the real `final_score`
+* any validation payload still exposes internal score/progress/ratio fields
+* any raw validation-report tree still contains float leaves at the boundaries
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 import pathlib
 import runpy
 import sys
+from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Iterable, List, Tuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -116,6 +117,8 @@ def inspect_real_reward(
 
 
 def walk_payload(obj: Any, prefix: str = "") -> Iterable[Tuple[str, str, Any]]:
+    if is_dataclass(obj):
+        obj = asdict(obj)
     if isinstance(obj, dict):
         for key, value in obj.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -127,15 +130,30 @@ def walk_payload(obj: Any, prefix: str = "") -> Iterable[Tuple[str, str, Any]]:
             yield from walk_payload(value, child_prefix)
 
 
-def inspect_no_internal_score_keys(
+def inspect_no_internal_metric_keys(
     violations: List[Dict[str, Any]],
     *,
     task_id: str,
     path: str,
-    payload: Dict[str, Any],
+    payload: Any,
 ) -> None:
     for value_path, key, value in walk_payload(payload, path):
-        if key.endswith("_score") and key != "final_score":
+        if (
+            key != "final_score"
+            and (
+                key.endswith("_score")
+                or key.endswith("_ratio")
+                or key.endswith("_progress")
+            )
+        ):
+            record_violation(
+                violations,
+                task_id=task_id,
+                path=value_path,
+                field=key,
+                value=value,
+            )
+        if isinstance(value, float) and value in {0.0, 1.0}:
             record_violation(
                 violations,
                 task_id=task_id,
@@ -164,13 +182,13 @@ def main() -> None:
         task_id = task["task_id"]
 
         initial_report = validate_task(task, task["files"])
-        inspect_no_internal_score_keys(
+        inspect_no_internal_metric_keys(
             violations,
             task_id=task_id,
-            path="validate_task.initial.as_dict",
-            payload=initial_report.as_dict(),
+            path="validate_task.initial.raw_report",
+            payload=initial_report,
         )
-        inspect_no_internal_score_keys(
+        inspect_no_internal_metric_keys(
             violations,
             task_id=task_id,
             path="validate_task.initial.as_public_dict",
@@ -179,7 +197,7 @@ def main() -> None:
 
         env = SoftwareLifecycleEnv()
         env.reset(task_id)
-        inspect_no_internal_score_keys(
+        inspect_no_internal_metric_keys(
             violations,
             task_id=task_id,
             path="env.state.after_reset.validation_report",
@@ -210,7 +228,7 @@ def main() -> None:
             field="final_score",
             value=float(submit_result.info["final_score"]),
         )
-        inspect_no_internal_score_keys(
+        inspect_no_internal_metric_keys(
             violations,
             task_id=task_id,
             path="env.step.submit.info.validation",
@@ -242,13 +260,13 @@ def main() -> None:
                 value=float(last_result.info["final_score"]),
             )
             report = validate_task(task, episode_env.state()["files"])
-            inspect_no_internal_score_keys(
+            inspect_no_internal_metric_keys(
                 violations,
                 task_id=task_id,
-                path=f"{label}.validate_task.as_dict",
-                payload=report.as_dict(),
+                path=f"{label}.validate_task.raw_report",
+                payload=report,
             )
-            inspect_no_internal_score_keys(
+            inspect_no_internal_metric_keys(
                 violations,
                 task_id=task_id,
                 path=f"{label}.validate_task.as_public_dict",
