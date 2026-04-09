@@ -106,7 +106,7 @@ class ValidationCheck:
     visibility: str
     passed: bool
     detail: str
-    weight: float = 1.0
+    weight: float = 1.0 - 1e-6
 
 
 @dataclass

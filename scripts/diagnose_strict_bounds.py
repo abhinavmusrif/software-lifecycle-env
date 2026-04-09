@@ -16,6 +16,7 @@ from __future__ import annotations
 import pathlib
 import runpy
 import sys
+from dataclasses import asdict
 from typing import Any, Dict, Iterable, List, Tuple
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -145,6 +146,41 @@ def inspect_mapping(
         )
 
 
+def walk_float_leaves(obj: Any, prefix: str = "") -> Iterable[Tuple[str, float]]:
+    if isinstance(obj, bool):
+        return
+    if isinstance(obj, float):
+        yield prefix or "<root>", obj
+        return
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            yield from walk_float_leaves(value, child_prefix)
+        return
+    if isinstance(obj, list):
+        for index, value in enumerate(obj):
+            child_prefix = f"{prefix}[{index}]"
+            yield from walk_float_leaves(value, child_prefix)
+
+
+def inspect_float_tree(
+    obj: Any,
+    *,
+    task_id: str,
+    path: str,
+    violations: List[Dict[str, Any]],
+) -> None:
+    for field_path, value in walk_float_leaves(obj):
+        if value in (0.0, 1.0) or not (0 < value < 1):
+            record_violation(
+                violations,
+                task_id=task_id,
+                path=f"{path}.{field_path}",
+                field=field_path,
+                value=float(value),
+            )
+
+
 def run_actions(task_id: str, actions: Iterable[Action]) -> Tuple[SoftwareLifecycleEnv, Any]:
     env = SoftwareLifecycleEnv()
     env.reset(task_id)
@@ -170,6 +206,12 @@ def main() -> None:
             path="validate_task.initial.report",
             violations=violations,
             collected_scores=collected_scores,
+        )
+        inspect_float_tree(
+            asdict(initial_report),
+            task_id=task_id,
+            path="validate_task.initial.asdict_recursive",
+            violations=violations,
         )
         inspect_mapping(
             initial_report.as_dict(),
@@ -204,6 +246,12 @@ def main() -> None:
             violations=violations,
             collected_scores=collected_scores,
         )
+        inspect_float_tree(
+            env.state().get("validation_report", {}),
+            task_id=task_id,
+            path="env.state.after_reset.validation_report_recursive",
+            violations=violations,
+        )
 
         submit_result = env.step(Action(action_type=ActionType.SUBMIT))
         inspect_score_value(
@@ -228,6 +276,12 @@ def main() -> None:
             path="env.step.submit.validation",
             violations=violations,
             collected_scores=collected_scores,
+        )
+        inspect_float_tree(
+            submit_result.info.get("validation", {}),
+            task_id=task_id,
+            path="env.step.submit.validation_recursive",
+            violations=violations,
         )
 
         for label, actions in (
@@ -262,6 +316,12 @@ def main() -> None:
                 path=f"{label}.validate_task.report",
                 violations=violations,
                 collected_scores=collected_scores,
+            )
+            inspect_float_tree(
+                asdict(report),
+                task_id=task_id,
+                path=f"{label}.validate_task.asdict_recursive",
+                violations=violations,
             )
             inspect_mapping(
                 report.as_dict(),
