@@ -9,6 +9,11 @@ app_port: 7860
 
 # Software Lifecycle Env
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-server-009688)
+![Status](https://img.shields.io/badge/status-prototype-orange)
+
 Deterministic benchmark environment for evaluating AI agents on realistic software engineering workflows: testing, debugging, and safe maintenance.
 
 The environment is intentionally small enough to run locally, but each task is designed like real engineering work: agents must inspect tests, logs, configs, notes, contracts, and source files before applying a fix.
@@ -160,6 +165,12 @@ See [`BENCHMARK_REPORT.md`](BENCHMARK_REPORT.md) for detailed task evidence.
 - Deterministic validation and scoring
 - Test/debug/refactor workflow modeling
 - Safety-aware benchmark design against overfitting and shortcut patches
+
+## Contributing
+
+Contributions are welcome for new task designs, validation improvements, documentation, and examples.
+
+Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`ROADMAP.md`](ROADMAP.md).
 
 ## Status
 
