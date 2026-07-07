@@ -3,7 +3,7 @@ description: >
   A deterministic benchmark environment simulating real-world software
   engineering tasks — testing, debugging, and maintenance/refactoring.
 version: "1.0.0"
-author: hackathon-team
+author: Musrif Abhinav
 license: MIT
 
 environment:

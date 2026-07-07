@@ -1,8 +1,8 @@
 [project]
 name = "software-lifecycle-env"
 version = "1.0.0"
-description = "OpenEnv benchmark environment simulating software lifecycle tasks"
-authors = [{name = "Abhinav Musrif"}]
+description = "Deterministic benchmark environment for evaluating AI agents on software lifecycle tasks"
+authors = [{name = "Musrif Abhinav"}]
 requires-python = ">=3.10"
 
 dependencies = [
@@ -11,7 +11,7 @@ dependencies = [
 "pydantic",
 "openai",
 "pyyaml",
-"openenv>=0.2.0"
+"openenv-core>=0.2.0"
 ]
 
 [project.scripts]
